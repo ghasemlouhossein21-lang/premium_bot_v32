@@ -1104,6 +1104,9 @@ async def _log_fulfilled_order(
     elif target_config_id:
         label = "🔁 تمدید سرویس"
 
+    # یکسان‌سازی تایپوهای قدیمی/اشتباه در متن انقضا
+    expiry_text = (expiry_text or "نامحدود").replace("نامدود", "نامحدود")
+
     username = await alerts.fetch_username(bot, user["telegram_id"])
     await alerts.log_order_to_channel(
         bot,
@@ -1331,15 +1334,7 @@ async def _finalize_send(message: types.Message, state: FSMContext):
     )
     is_test_delivery = bool(plan_order_id and plan_order and plan_order.get("plan_key") == FREE_TEST_PLAN_KEY)
     delivery_text_key = "service_delivery_test_text" if is_test_delivery else "service_delivery_text"
-    admin_message = (
-        "مرسی از انتخاب شما 💗" if is_test_delivery else "ممنون از اعتماد شما 💗"
-    )
-    caption = user_text(
-        delivery_text_key,
-        service_label=_english_digits(delivery_label),
-        link=sub_link,
-        admin_message=admin_message,
-    )
+    caption = user_text(delivery_text_key, service_label=_english_digits(delivery_label), link=sub_link)
 
     expiry_date = None
     if days is not None:
