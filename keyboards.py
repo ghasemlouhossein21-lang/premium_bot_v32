@@ -677,10 +677,10 @@ def admin_panel_menu(orders_enabled: bool = True, permissions: set[str] | None =
         ("settings", "🔁 تنظیمات تمدید", "admin_renewal_settings", "primary"),
     ]
     buttons=[]
+    buttons=[]
     for perm,text,cb,style in items:
-        if allowed(perm): buttons.append(InlineKeyboardButton(text=text, callback_data=cb, style=style))
-    if allowed("orders_toggle"):
-        buttons.append(InlineKeyboardButton(text=("🔴 خاموش کردن سفارشات" if orders_enabled else "🟢 روشن کردن سفارشات"), callback_data=("admin_orders_off" if orders_enabled else "admin_orders_on"), style=("danger" if orders_enabled else "success")))
+        if allowed(perm):
+            buttons.append(InlineKeyboardButton(text=text, callback_data=cb, style=style))
     if is_main_admin:
         buttons.append(InlineKeyboardButton(text="👮 مدیریت ادمین‌ها", callback_data="admin_manage_admins", style="danger"))
     if not buttons:
