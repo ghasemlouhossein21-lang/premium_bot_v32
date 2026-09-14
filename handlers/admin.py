@@ -24,14 +24,16 @@ from aiogram.types import FSInputFile
 import database as db
 import crypto
 import alerts
-from subscription import extract_meta, days_remaining, format_bytes, usage_bar, fetch_subscription_info, format_expire, enrich_configs_with_subscription_names
-from utils import parse_int_in_range, is_duplicate_action, now_tehran_naive, STICKER_SECTION_LABELS, STICKER_FILES, STICKERS_DIR, invalidate_section_sticker_cache, send_notification_sticker, clean_numeric_id, TELEGRAM_TEXT_LIMIT, truncate_for_telegram, is_message_too_long_error, serialize_message_entities, message_entities_from_dicts, telegram_utf16_length
+from subscription import extract_meta, days_remaining, format_bytes, usage_bar, fetch_subscription_info, format_expire, enrich_configs_with_subscription_names, get_live_service_status
+from utils import edit_rich
+from utils import parse_int_in_range, is_duplicate_action, now_tehran_naive, TEHRAN_TZ, STICKER_SECTION_LABELS, STICKER_FILES, STICKERS_DIR, invalidate_section_sticker_cache, send_notification_sticker, clean_numeric_id, TELEGRAM_TEXT_LIMIT, truncate_for_telegram, is_message_too_long_error, serialize_message_entities, message_entities_from_dicts, telegram_utf16_length
 from states import AdminStates, UserStates
 import bot_info
 import payments
 import marzban
 import pasargad
 import vpn_panel
+import panels
 from config import (
     ADMIN_ID,
     DATABASE_PATH,
@@ -92,6 +94,11 @@ from keyboards import (
     admin_botinfo_channels_menu,
     admin_pasargad_menu,
     admin_panel_choose_menu,
+    admin_renewal_categories_menu,
+    admin_renewal_category_menu,
+    admin_renewal_mode_menu,
+    admin_renewal_scope_menu,
+    admin_renewal_plan_menu,
     admin_manage_admins_keyboard,
     admin_permissions_keyboard,
 )
@@ -139,6 +146,7 @@ def _permission_for_callback(data: str | None) -> str | None:
     if d.startswith(("approve_", "reject_", "approvepay|", "rejectpay|", "approvecustom_", "rejectcustom_", "clearreceipts")) or d == "admin_pending_receipts":
         return "receipts"
     groups = [
+        (("admin_tickets", "admintickets_", "adminticket_", "ticketreply_", "ticketclose_", "ticketreopen_", "replyticket_"), "tickets"),
         (("admin_stats",), "stats"),
         (("admin_request_queue", "admin_order_queue", "dismissorder_", "clearorders", "marzbansend|"), "requests"),
         (("admin_userlist", "userpage_", "useropen_", "accounting_", "admin_search", "useractions_", "pm_", "toggleblock_", "deleteuser_", "deleteuserconfirm_", "svcs_", "svcdetail_", "svcdelete_", "svcrestore_", "svcpurge", "svcedit_"), "users"),
@@ -4354,3 +4362,396 @@ async def admin_panel_choose_open_msg(message: types.Message):
         "ساخت/تمدید/فعال‌سازی خودکار سرویس‌ها از طریق پنلی انجام می‌شود که اینجا به‌عنوان پنل فعال انتخاب شود."
     )
     await message.answer(text, reply_markup=admin_panel_choose_menu(available, active))
+
+# ---------------------------------------------------------------------------
+# 🔧 بازیابی handlerهای حذف‌شده از پنل ادمین (تمدید، جستجوی کانفیگ و پرداخت‌های رمزاری)
+# ---------------------------------------------------------------------------
+
+def _admin_renewal_settings(category_id, plan_key=None):
+    try: cid = int(category_id)
+    except Exception: cid = 0
+    defaults = {"mode":"day","price_day":0,"price_gb":5500,"min_day":1,"max_day":0,"min_gb":1,"max_gb":0,"day_options":"30,60,90","gb_options":"10,20,50"}
+    if cid <= 0: return defaults
+    for field in defaults:
+        raw=db.get_setting(f"renewal_category_{cid}_{field}")
+        if raw not in (None, ""):
+            try: defaults[field]=raw if field in ("mode","day_options","gb_options") else int(float(raw))
+            except (TypeError,ValueError): pass
+    try:
+        legacy=bot_info.get_renewal_settings(cid)
+        if isinstance(legacy,dict):
+            for field in defaults:
+                if db.get_setting(f"renewal_category_{cid}_{field}") in (None,"") and field in legacy: defaults[field]=legacy[field]
+    except Exception: pass
+    if plan_key:
+        try: defaults=bot_info.get_renewal_plan_settings(plan_key,cid)
+        except Exception: pass
+    return defaults
+
+async def _apply_admin_renewal(receipt):
+    try:
+        payload=json.loads(receipt.get("extra") or "{}")
+    except Exception:
+        payload={}
+    uid=str(receipt.get("telegram_id")); user=db.get_user(uid)
+    cfg_id=payload.get("cfg_id")
+    cfg=db.get_config_by_id(int(cfg_id)) if cfg_id else None
+    if not user or not cfg or cfg.get("user_id") != user.get("id") or not cfg.get("service_id"):
+        return False, "سرویس تمدیدی دیگر پیدا نشد."
+    volume=float(payload.get("volume_gb") or 0); days=int(payload.get("days") or 0)
+    panel = db.get_vpn_panel(cfg.get("panel_id")) if cfg.get("panel_id") else None
+    if not panel:
+        return False, "پنل این سرویس پیدا نشد."
+    ok, panel_data, msg = await panels.renew_existing_service(
+        panel, cfg["service_id"], volume, days
+    )
+    if not ok:
+        return False, msg
+    try:
+        exp = panel_data.get("expire") if isinstance(panel_data, dict) else None
+        expiry = datetime.fromtimestamp(int(exp), tz=TEHRAN_TZ).replace(tzinfo=None).strftime("%Y-%m-%d") if exp else cfg.get("expiry")
+    except Exception:
+        expiry = cfg.get("expiry")
+    db.update_config_expiry(cfg["id"], expiry)
+    return True,(volume,days,expiry,panel_data)
+
+def _renewal_confirmation_values(panel_data: dict | None, added_volume: float, added_days: int) -> dict:
+    import math, time
+    data=panel_data or {}; total=data.get("total")
+    if total is not None:
+        try:
+            new_gb=float(total)/(1024**3)
+            if new_gb<=0: previous_volume=new_volume="نامحدود"
+            elif added_volume:
+                previous_volume=f"{max(0,new_gb-float(added_volume)):g} گیگ"; new_volume=f"{new_gb:g} گیگ"
+            else: previous_volume=new_volume=f"{new_gb:g} گیگ"
+        except Exception: previous_volume=new_volume="نامشخص"
+    else: previous_volume=new_volume="نامشخص" if added_volume else "بدون تغییر"
+    expire=data.get("expire")
+    if expire:
+        try:
+            new_days=max(0,int(math.ceil((int(expire)-time.time())/86400)))
+            if added_days: previous_days=f"{max(0,new_days-int(added_days))} روز"; new_days_text=f"{new_days} روز"
+            else: previous_days=new_days_text=f"{new_days} روز"
+        except Exception: previous_days=new_days_text="نامشخص"
+    else: previous_days=new_days_text="نامحدود"
+    return {"added_volume":f"{float(added_volume):g} گیگ" if added_volume else "بدون تغییر","previous_volume":previous_volume,"new_volume":new_volume,"added_days":f"{int(added_days)} روز" if added_days else "بدون تغییر","previous_days":previous_days,"new_days":new_days_text,"volume":f"{float(added_volume):g} گیگ" if added_volume else "بدون تغییر","days":f"{int(added_days)} روز" if added_days else "بدون تغییر"}
+
+def _renewal_scope_parts(target: str):
+    if target.startswith("cat_"):
+        try: return "cat",int(target[4:]),None
+        except Exception: return None,None,None
+    if target.startswith("plan_"):
+        plan_key=target[5:]; plan=db.get_vip_plan(plan_key)
+        if plan and plan.get("category_id"): return "plan",int(plan["category_id"]),plan_key
+    return None,None,None
+
+@router.callback_query(F.data == "admin_config_search")
+async def admin_config_search_start(callback: types.CallbackQuery, state: FSMContext):
+    if not _admin_perm(callback.from_user.id, "users"):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    await edit_rich(callback.message,
+        "🔎 بخشی از اسم سرویس را ارسال کنید تا بین سرویس‌های همه کاربران جستجو کنم.\n\nمثلاً: `520120` یا `Config`",
+        reply_markup=admin_back_button(),
+        parse_mode="Markdown",
+    )
+    await state.set_state(AdminStates.waiting_search_config)
+    await callback.answer()
+
+@router.message(AdminStates.waiting_search_config)
+async def admin_config_search_result(message: types.Message, state: FSMContext):
+    if not _admin_perm(message.from_user.id, "users"):
+        return
+    query = (message.text or "").strip()
+    if not query:
+        await answer_rich(message, "❌ لطفاً بخشی از نام سرویس را وارد کنید.", reply_markup=admin_back_button())
+        return
+
+    configs = db.get_all_configs(include_deleted=True)
+    await enrich_configs_with_subscription_names(configs)
+    tokens = [x.casefold() for x in query.split() if x.strip()]
+    if not tokens:
+        tokens = [query.casefold()]
+    matches = []
+    for cfg in configs:
+        display_name = str(cfg.get("_display_name") or cfg.get("plan") or "سرویس")
+        plan_name = str(cfg.get("plan") or "")
+        service_id = str(cfg.get("service_id") or "")
+        owner = db.get_user_by_id(cfg.get("user_id")) or {}
+        owner_name = str(owner.get("name") or "")
+        haystack = " ".join((display_name, plan_name, service_id, owner_name)).casefold()
+        # چند رقم/بخش جداگانه هم‌زمان قابل جست‌وجوست؛ مثلاً «43 05» هر سرویس
+        # دارای هر دو قطعه را برمی‌گرداند، و نتیجه مثل قبل نام پروفایل صاحب سرویس را نشان می‌دهد.
+        if all(token in haystack for token in tokens):
+            matches.append(cfg)
+
+    if not matches:
+        await answer_rich(message, f"🔎 برای «{query}» هیچ سرویسی پیدا نشد.", reply_markup=admin_back_button())
+        return
+
+    # هر سرویس با نام واقعی استخراج‌شده از Subscription و نام صاحبش نمایش داده می‌شود.
+    buttons = []
+    for cfg in matches[:50]:
+        owner = db.get_user_by_id(cfg.get("user_id"))
+        owner_name = (owner or {}).get("name") or (owner or {}).get("telegram_id") or "کاربر"
+        icon = "🚀" if cfg.get("type", "vip") == "vip" else "🎮"
+        mark = "❌ " if cfg.get("deleted") else ""
+        display_name = cfg.get("_display_name") or cfg.get("plan") or "سرویس"
+        buttons.append([InlineKeyboardButton(
+            text=f"{mark}👤 {owner_name} | {icon} {display_name}",
+            callback_data=f"svcdetail_{cfg['id']}", style="primary"
+        )])
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_back", style="primary")])
+    kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    suffix = f"\n\nنمایش {min(len(matches), 50)} مورد از {len(matches)} نتیجه." if len(matches) > 50 else ""
+    await answer_rich(message, f"🔎 {len(matches)} سرویس برای «{query}» پیدا شد:{suffix}\n\n👇 برای مشاهده جزئیات انتخاب کنید.", reply_markup=kb)
+    await state.clear()
+
+
+# ---------------------------------------------------------------------------
+# 💳 شارژ کیف پول (تأیید/رد رسید + شارژ دستی)
+# دسترسی از طریق «🔍 جستجوی حرفه‌ای» ← دکمه «💰 شارژ دستی» (برای بهینه شدن فضای منو)
+# ---------------------------------------------------------------------------
+
+@router.message(F.text == "🔎 جستجوی کانفیگ")
+async def menu_admin_config_search(message: types.Message, state: FSMContext):
+    if not _admin_perm(message.from_user.id, "users"):
+        return
+    await message.answer(
+        "🔎 بخشی از اسم سرویس را ارسال کنید تا بین سرویس‌های همه کاربران جستجو کنم.\n\nمثلاً: `520120` یا `Config`",
+        reply_markup=admin_back_button(),
+        parse_mode="Markdown",
+    )
+    await state.set_state(AdminStates.waiting_search_config)
+
+@router.callback_query(F.data.startswith("approverenew|"))
+async def approve_renewal(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
+    receipt_id=int(callback.data.split("|",1)[1])
+    if is_duplicate_action(f"approverenew_{receipt_id}") or not db.claim_admin_action(f"approverenew_{receipt_id}"):
+        await callback.answer("⚠️ این رسید قبلاً پردازش شده.",show_alert=True); return
+    receipt=db.get_pending_receipt_by_id(receipt_id)
+    if not receipt: await callback.answer("⚠️ رسید پیدا نشد.",show_alert=True); return
+    ok,result=await _apply_admin_renewal(receipt)
+    if not ok: await answer_rich(callback.message,f"❌ تمدید انجام نشد: {result}"); await callback.answer("❌ ناموفق",show_alert=True); return
+    volume,days,_,panel_data=result; db.resolve_pending_receipt_by_id(receipt_id)
+    await _finish_receipt_message(callback.message,"\n\n✅ تمدید تأیید و روی پنل اعمال شد.",queue_refresh=lambda:_render_pending_receipts(callback))
+    try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("renew_done",service_name=receipt.get("label") or "سرویس",**_renewal_confirmation_values(panel_data,volume,days)))
+    except Exception: pass
+    try:
+        payload=json.loads(receipt.get("extra") or "{}")
+        cfg=db.get_config_by_id(payload.get("cfg_id"))
+        service_username=(panel_data or {}).get("username") or (cfg or {}).get("service_id") or "-"
+        await send_rich(callback.bot,ADMIN_ID,alerts.admin_delivery_summary(db.get_user(receipt["telegram_id"]) or {},service_username,(cfg or {}).get("plan") or "سرویس",int(receipt.get("amount") or 0)))
+    except Exception:
+        logger.exception("ارسال خلاصه تأیید تمدید برای ادمین ناموفق بود")
+    await callback.answer("✅ تمدید شد.")
+
+@router.callback_query(F.data.startswith("approvecrypto|"))
+async def approve_crypto_payment(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
+    receipt_id=int(callback.data.split("|",1)[1]); receipt=db.get_pending_receipt_by_id(receipt_id)
+    if not receipt: await callback.answer("⚠️ رسید پیدا نشد.",show_alert=True); return
+    if is_duplicate_action(f"approvecrypto_{receipt_id}") or not db.claim_admin_action(f"approvecrypto_{receipt_id}"):
+        await callback.answer("⚠️ این رسید قبلاً پردازش شده.",show_alert=True); return
+    try: payload=json.loads(receipt.get("extra") or "{}")
+    except Exception: payload={}
+    if receipt.get("kind")=="crypto_renew":
+        ok,result=await _apply_admin_renewal(receipt)
+        if not ok: await answer_rich(callback.message,f"❌ تمدید انجام نشد: {result}"); await callback.answer("❌ ناموفق",show_alert=True); return
+        volume,days,_,panel_data=result; db.resolve_pending_receipt_by_id(receipt_id)
+        try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("renew_done",service_name=receipt.get("label") or "سرویس",**_renewal_confirmation_values(panel_data,volume,days)))
+        except Exception: pass
+        try:
+            cfg=db.get_config_by_id(payload.get("cfg_id")); service_username=(panel_data or {}).get("username") or (cfg or {}).get("service_id") or "-"
+            await send_rich(callback.bot,ADMIN_ID,alerts.admin_delivery_summary(db.get_user(receipt["telegram_id"]) or {},service_username,(cfg or {}).get("plan") or "سرویس",int(receipt.get("amount") or 0)))
+        except Exception:
+            logger.exception("ارسال خلاصه تأیید تمدید ارزی برای ادمین ناموفق بود")
+        await _finish_receipt_message(callback.message,"\n\n✅ پرداخت ارزی تأیید و تمدید انجام شد.",queue_refresh=lambda:_render_pending_receipts(callback)); await callback.answer("✅ تمدید شد."); return
+    plan_key=payload.get("plan_key") or receipt.get("plan_key"); plan=db.get_effective_plan(plan_key); user=db.get_user(receipt["telegram_id"])
+    if not plan or not user: await callback.answer("❌ پلن/کاربر پیدا نشد.",show_alert=True); return
+    price=int(receipt["amount"]); db.record_purchase(user["id"],price,f"خرید {plan['name']} (ارزی)")
+    if payload.get("discount_code"):
+        try: db.use_discount(payload["discount_code"], user["id"])
+        except Exception: logger.exception("مصرف کد تخفیف پرداخت ارزی ناموفق بود")
+    order_id=db.create_order(user["id"],plan_key,plan["name"],plan_type(plan_key),price)
+    db.resolve_pending_receipt_by_id(receipt_id)
+    await _finish_receipt_message(callback.message,"\n\n✅ پرداخت ارزی تأیید شد و خرید ثبت شد.",queue_refresh=lambda:_render_pending_receipts(callback))
+    try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("notif_purchase_approved",plan_name=plan["name"],discount_note=""))
+    except Exception: pass
+    await answer_rich(callback.message,"📤 برای ارسال کانفیگ این خرید:",reply_markup=admin_purchase_notify_keyboard(receipt["telegram_id"],plan_key,order_id)); await callback.answer("✅ خرید ثبت شد.")
+
+# ---------------------------------------------------------------------------
+# 🛒 خرید اشتراک برای خود ادمین
+# ---------------------------------------------------------------------------
+
+@router.callback_query(F.data.startswith("rejectrenew|"))
+async def reject_renewal(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
+    receipt_id=int(callback.data.split("|",1)[1])
+    if is_duplicate_action(f"rejectrenew_{receipt_id}") or not db.claim_admin_action(f"rejectrenew_{receipt_id}"):
+        await callback.answer("⚠️ این رسید قبلاً پردازش شده.",show_alert=True); return
+    receipt=db.get_pending_receipt_by_id(receipt_id)
+    if receipt:
+        db.resolve_pending_receipt_by_id(receipt_id)
+        await _finish_receipt_message(callback.message,"\n\n❌ رد شد.",queue_refresh=lambda:_render_pending_receipts(callback))
+        try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("notif_receipt_rejected"))
+        except Exception: pass
+    await callback.answer("❌ رد شد.")
+
+@router.callback_query(F.data.startswith("rejectcrypto|"))
+async def reject_crypto_payment(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
+    receipt_id=int(callback.data.split("|",1)[1]); receipt=db.get_pending_receipt_by_id(receipt_id)
+    if receipt:
+        db.resolve_pending_receipt_by_id(receipt_id)
+        await _finish_receipt_message(callback.message,"\n\n❌ پرداخت ارزی رد شد.",queue_refresh=lambda:_render_pending_receipts(callback))
+        try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("notif_receipt_rejected"))
+        except Exception: pass
+    await callback.answer("❌ رد شد.")
+
+@router.callback_query(F.data.startswith("renewsetcat_"))
+async def admin_renewal_category(callback: types.CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        category_id = int(callback.data.replace("renewsetcat_", ""))
+    except Exception:
+        await callback.answer("❌ دسته نامعتبر است.", show_alert=True)
+        return
+    cat = db.get_vip_category(category_id)
+    if not cat:
+        await callback.answer("❌ دسته پیدا نشد.", show_alert=True)
+        return
+    await state.clear()
+    await edit_rich(
+        callback.message,
+        f"تنظیمات تمدید\n\nدسته: {cat['name']}\n\nتغییرات را برای همه پلن‌های این دسته اعمال می‌کنی یا فقط یک پلن؟",
+        reply_markup=admin_renewal_scope_menu(category_id),
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("renewsetmode_"))
+async def admin_renewal_mode(callback: types.CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
+    target=callback.data.replace("renewsetmode_", "", 1); scope,category_id,plan_key=_renewal_scope_parts(target)
+    if not scope: await callback.answer("دسته/پلن نامعتبر است.", show_alert=True); return
+    await edit_rich(callback.message,"نوع تمدید را انتخاب کن:",reply_markup=admin_renewal_mode_menu(category_id,plan_key=plan_key)); await callback.answer()
+
+@router.callback_query(F.data.startswith("renewsetmodeval_"))
+async def admin_renewal_mode_save(callback: types.CallbackQuery, state: FSMContext):
+    raw=callback.data.replace("renewsetmodeval_", "", 1)
+    try: mode,target=raw.split("_",1)
+    except ValueError: await callback.answer("❌ مقدار نامعتبر.",show_alert=True); return
+    scope,category_id,plan_key=_renewal_scope_parts(target)
+    if not scope or mode not in ("day","gb","both"): await callback.answer("❌ مقدار نامعتبر.",show_alert=True); return
+    key=f"renewal_category_{category_id}_mode" if scope=="cat" else f"renewal_plan_{plan_key}_mode"; db.set_setting(key,mode)
+    try:
+        if scope=="cat": bot_info.set_renewal_setting(category_id,"mode",mode); bot_info.clear_renewal_plan_overrides_for_category(category_id,"mode")
+        else: bot_info.set_renewal_plan_setting(plan_key,"mode",mode)
+    except Exception: pass
+    await state.clear(); kb=admin_renewal_category_menu(category_id) if scope=="cat" else admin_renewal_plan_menu(category_id,plan_key)
+    await edit_rich(callback.message,"تنظیمات تمدید به‌روز شد.",reply_markup=kb); await callback.answer()
+
+@router.callback_query(F.data.startswith("renewset_"))
+async def admin_renewal_numeric_start(callback: types.CallbackQuery, state: FSMContext):
+    raw=callback.data.replace("renewset_", "", 1); parts=raw.split("_")
+    if len(parts)<4: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
+    field,unit=parts[0],parts[1]; target="_".join(parts[2:]); scope,category_id,plan_key=_renewal_scope_parts(target)
+    if field not in ("price","min","max") or unit not in ("day","gb") or not scope: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
+    st=_admin_renewal_settings(category_id,plan_key); current=st[f"{field}_{unit}"]
+    key=f"renewal_category_{category_id}_{field}_{unit}" if scope=="cat" else f"renewal_plan_{plan_key}_{field}_{unit}"
+    await state.update_data(botinfo_key=key,renewal_category_id=category_id,renewal_plan_key=plan_key); await state.set_state(AdminStates.waiting_botinfo_value)
+    label={"price":"قیمت","min":"حداقل","max":"حداکثر"}[field]; suffix="تومان" if field=="price" else ("روز" if unit=="day" else "گیگ"); shown="نامحدود" if field=="max" and int(current or 0)==0 else current
+    await answer_rich(callback.message,f"{label} {suffix} را وارد کن.\nمقدار فعلی: {shown}",reply_markup=admin_back_button()); await callback.answer()
+
+@router.callback_query(F.data.startswith("renewset_options_"))
+async def admin_renewal_options_start(callback: types.CallbackQuery, state: FSMContext):
+    raw=callback.data.replace("renewset_options_", "", 1)
+    try: unit,target=raw.split("_",1)
+    except ValueError: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
+    scope,category_id,plan_key=_renewal_scope_parts(target)
+    if unit not in ("day","gb") or not scope: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
+    st=_admin_renewal_settings(category_id,plan_key); current=st.get(f"{unit}_options") or ("30,60,90" if unit=="day" else "10,20,50")
+    key=f"renewal_category_{category_id}_{unit}_options" if scope=="cat" else f"renewal_plan_{plan_key}_{unit}_options"
+    await state.update_data(botinfo_key=key,renewal_category_id=category_id,renewal_plan_key=plan_key); await state.set_state(AdminStates.waiting_botinfo_value)
+    label="روز" if unit=="day" else "گیگ"; await answer_rich(callback.message,f"دکمه‌های {label} را با کاما جدا کن.\nمثال: 10,20,50\nمقدار فعلی: {current}",reply_markup=admin_back_button()); await callback.answer()
+
+@router.callback_query(F.data.startswith("renewsetscope_all_"))
+async def admin_renewal_scope_all(callback: types.CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
+    try: category_id=int(callback.data.replace("renewsetscope_all_", ""))
+    except Exception: await callback.answer("دسته نامعتبر است.", show_alert=True); return
+    cat=db.get_vip_category(category_id)
+    await state.clear()
+    await edit_rich(callback.message, f"تنظیمات تمدید\n\nدسته: {(cat or {}).get('name',category_id)}\nمحدوده: همه پلن‌های این دسته", reply_markup=admin_renewal_category_menu(category_id))
+    await callback.answer()
+
+@router.callback_query(F.data.regexp(r"^renewsetscope_\d+$"))
+async def admin_renewal_scope_back(callback: types.CallbackQuery, state: FSMContext):
+    if callback.data.startswith("renewsetscope_all_") or callback.data.startswith("renewsetscope_plan_"):
+        return
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
+    try: category_id=int(callback.data.replace("renewsetscope_", ""))
+    except Exception: await callback.answer("دسته نامعتبر است.", show_alert=True); return
+    await state.clear(); cat=db.get_vip_category(category_id)
+    await edit_rich(callback.message,f"تنظیمات تمدید\n\nدسته: {(cat or {}).get('name',category_id)}\n\nتغییرات را برای همه پلن‌ها اعمال می‌کنی یا فقط یک پلن؟",reply_markup=admin_renewal_scope_menu(category_id)); await callback.answer()
+
+@router.callback_query(F.data.startswith("renewsetscope_plan_"))
+async def admin_renewal_scope_plan(callback: types.CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
+    raw=callback.data.replace("renewsetscope_plan_", "", 1)
+    try: category_id_str,plan_key=raw.split("_",1); category_id=int(category_id_str)
+    except Exception: await callback.answer("پلن نامعتبر است.", show_alert=True); return
+    plan=db.get_vip_plan(plan_key)
+    if not plan or int(plan.get("category_id") or 0)!=category_id: await callback.answer("پلن پیدا نشد.", show_alert=True); return
+    await state.clear()
+    await edit_rich(callback.message, f"تنظیمات تمدید\n\nدسته: {(db.get_vip_category(category_id) or {}).get('name',category_id)}\nپلن: {plan['name']}\nمحدوده: فقط این پلن", reply_markup=admin_renewal_plan_menu(category_id,plan_key))
+    await callback.answer()
+
+@router.callback_query(F.data == "admin_renewal_settings")
+async def admin_renewal_settings_open(callback: types.CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    await state.clear()
+    await edit_rich(
+        callback.message,
+        "🔁 تنظیمات تمدید سرویس\n\nبرای هر دسته‌بندی می‌توانی حالت تمدید، قیمت و حداقل/حداکثر روز و گیگ را جداگانه تنظیم کنی.",
+        reply_markup=admin_renewal_categories_menu(),
+    )
+    await callback.answer()
+
+@router.message(F.text == "🔁 تنظیمات تمدید")
+async def admin_renewal_settings_open_message(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    await state.clear()
+    await answer_rich(
+        message,
+        "🔁 تنظیمات تمدید سرویس\n\nبرای هر دسته‌بندی می‌توانی حالت تمدید، قیمت و حداقل/حداکثر روز و گیگ را جداگانه تنظیم کنی.",
+        reply_markup=admin_renewal_categories_menu(),
+    )
+
+@router.callback_query(F.data.startswith("textcatpage_"))
+async def admin_text_category_page(callback: types.CallbackQuery, state: FSMContext):
+    """جابجایی بین صفحات یک دسته‌ی بزرگ در ویرایشگر متن."""
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
+    try:
+        _, index_raw, page_raw = callback.data.split("_", 2)
+        index = int(index_raw)
+        page = int(page_raw)
+        category = list(TEXT_CATEGORIES.keys())[index]
+    except Exception:
+        await callback.answer("❌ صفحه‌ی متن پیدا نشد.", show_alert=True); return
+    await state.clear()
+    note = "\n\n🔒 متن انقضای فاکتور کارت‌به‌کارت سیستمی است و از اینجا قابل تغییر نیست." if "فاکتور کارت‌به‌کارت" in category else ""
+    await edit_rich(
+        callback.message,
+        f"📝 {category}\n\nمتن موردنظر را برای ویرایش انتخاب کنید:{note}",
+        reply_markup=_text_manager_keyboard(category, page=page),
+    )
+    await callback.answer()
