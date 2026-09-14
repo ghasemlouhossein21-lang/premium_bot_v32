@@ -12,11 +12,10 @@ TEXT_CATEGORIES = OrderedDict({
         ('main_profile', '👤 پروفایل من'),
         ('main_support', '👨\u200d💻 پشتیبانی'),
         ('main_guides', '📚 راهنما'),
-        ('main_renew', '🔁 تمدید سرویس'),
         ('main_agency', '🤝 درخواست نمایندگی'),
     ],
     '👤 پروفایل من': [
-        ('profile_overview', '🧑‍💻 پروفایل حرفه\u200cای شما\n\n📛 نام: {name}\n🪪 آیدی: {telegram_id}\n\n💰 موجودی قابل استفاده: {wallet:,} تومان\n🔒 موجودی در انتظار: {locked:,} تومان\n\n📦 تعداد سرویس: {configs_count}\n🛒 کل خرید: {total_purchase:,} تومان\n🗓 تاریخ عضویت: {joined}\n\n👥 تعداد دعوت: {invited_count} | دعوت موفق: {successful_invites}'),
+        ('profile_overview', '👤 پروفایل حرفه\u200cای شما\n\n📛 نام: {name}\n🆔 آیدی: {telegram_id}\n\n👛 موجودی قابل استفاده: {wallet:,} تومان\n🔒 موجودی در انتظار: {locked:,} تومان\n\n📦 تعداد سرویس: {configs_count}\n🛒 کل خرید: {total_purchase:,} تومان\n📅 تاریخ عضویت: {joined}\n\n👥 تعداد دعوت: {invited_count} | دعوت موفق: {successful_invites}'),
         ('profile_free_wallet', '💰 کیف پول آزاد'),
         ('profile_locked_wallet', '🔒 کیف پول مسدود'),
         ('profile_history', '🛒 تاریخچه خرید'),
@@ -27,9 +26,9 @@ TEXT_CATEGORIES = OrderedDict({
         ('purchase_history_title', '🛒 تاریخچه خرید شما:\n\n'),
     ],
     '💰 کیف پول': [
-        ('wallet_overview', '💰 کیف پول شما\n\n👛 موجودی قابل استفاده: {wallet:,} تومان\n🔒 موجودی در انتظار: {locked:,} تومان'),
+        ('wallet_overview', '💰 کیف پول شما\n\n👛 موجودی قابل استفاده: {wallet:,} تومان\n🔒 موجودی در انتظار: {locked:,} تومان\n\nℹ️ موجودی در انتظار، پس از خرید حجم {min_gb} گیگ یا بیشتر توسط فردی که با لینک شما عضو شده، به\u200cصورت خودکار آزاد می\u200cشود.'),
         ('wallet_free_overview', '💰 موجودی قابل استفاده شما\n\n{wallet:,} تومان\n\nاین مبلغ را می\u200cتوانید برای خرید سرویس استفاده کنید.'),
-        ('wallet_locked_overview', '🔒 موجودی در انتظار شما\n\n{locked:,} تومان'),
+        ('wallet_locked_overview', '🔒 موجودی در انتظار شما\n\n{locked:,} تومان\n\nاین مبلغ از دعوت دوستان به\u200cدست آمده و پس از خرید حجم {min_gb} گیگ یا بیشتر توسط آن\u200cها، به\u200cصورت خودکار به موجودی قابل\u200cاستفاده شما اضافه می\u200cشود.'),
         ('wallet_charge', '💳 شارژ کیف پول'),
         ('wallet_discount', '🎟 ثبت کد تخفیف'),
         ('wallet_transactions', '📋 تراکنش\u200cهای من'),
@@ -57,11 +56,11 @@ TEXT_CATEGORIES = OrderedDict({
         ('charge_problem', '❌ مشکلی پیش آمد، لطفاً دوباره از منوی شارژ شروع کنید.'),
         ('charge_receipt_expired', '⏰ مهلت ۳۰ دقیقه\u200cای پرداخت این فاکتور به پایان رسیده و به\u200cطور خودکار منقضی شد. لطفاً دوباره از منوی شارژ شروع کنید.'),
         ('charge_receipt_registered', '✅ رسید ثبت شد. پس از تأیید ادمین، کیف پول شما شارژ می\u200cشود.'),
-        ('invoice_wallet_card', '🟩⬜️ مرحله 2 از 2\n\n💳 شارژ کیف پول\n\n💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n💳 شماره کارت:\n{card_number}\n\n👤 به نام: {card_holder}\n\n📸 پس از واریز، عکس رسید پرداخت یا 📝 متن رسید را همینجا ارسال کنید.'),
+        ('invoice_wallet_card', '🟩⬜️ مرحله 2 از 2\n\n💳 شارژ کیف پول\n\n💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n💳 شماره کارت:\n{card_number}\n\n👤 به نام: {card_holder}\n\n📸 پس از واریز، عکس رسید پرداخت را همینجا ارسال کنید.'),
     ],
     '🛒 خرید اشتراک': [
-        ('plans_intro', '🛒 **خرید اشتراک**\n\n🚀 **سرور VIP (V2Ray)**\nفیلترشکن پرسرعت و پایدار؛ مناسب وب‌گردی با IP ثابت.\n✅ حتی در «اینترنت ملی» بدون قطعی\n\nلطفاً سرویس مورد نظر خود را از منوی زیر انتخاب کنید 👇'),
-        ('vip_intro', 'سرویس‌های VIP (V2Ray) 🌐\n\nیکی از دسته‌ها را انتخاب کنید 👇'),
+        ('plans_intro', '🛒 *خرید اشتراک*\n\n*سرور VIP (V2Ray)*\nفیلترشکن پرسرعت و پایدار؛ مناسب وب\u200cگردی با IP ثابت.\n✅ حتی در «اینترنت ملی» بدون قطعی\n\nلطفاً سرویس مورد نظر خود را از منوی زیر انتخاب کنید 👇'),
+        ('vip_intro', 'سرویس\u200cهای VIP (V2Ray)\n\nیکی از دسته\u200cها را انتخاب کنید 👇'),
         ('free_test_page', '🎁 {plan_name}\n💰 قیمت: {price:,} تومان\n👛 موجودی کیف پول شما: {wallet:,} تومان\n\nروش پرداخت را انتخاب کنید:'),
         ('plan_payment_page', '🛒 {plan_name}\n💰 قیمت: {price:,} تومان{note}\n👛 موجودی کیف پول شما: {wallet:,} تومان\n\nروش پرداخت را انتخاب کنید:'),
         ('plan_payment_service_name', '🔤 نام سرویس: {service_name}'),
@@ -99,7 +98,7 @@ TEXT_CATEGORIES = OrderedDict({
         ('invoice_expired_wait', '⏰ مهلت ۳۰ دقیقه\u200cای پرداخت این فاکتور به پایان رسیده و به\u200cطور خودکار منقضی شد. لطفاً دوباره از منوی سرویس\u200cها سفارش تان را ثبت کنید.'),
         ('receipt_photo_only', '📸 لطفاً عکس رسید پرداخت را ارسال کنید (نه متن).'),
         ('receipt_registered', '✅ رسید ثبت شد. پس از تأیید ادمین، نتیجه به شما اطلاع داده می\u200cشود.'),
-        ('invoice_plan_card', '🟩🟩⬜️ مرحله 2 از 3\n\n💳 پرداخت کارت به کارت\n\n🛒 {plan_name}\n💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n💳 شماره کارت:\n{card_number}\n\n👤 به نام: {card_holder}\n\n📸 پس از واریز، عکس رسید پرداخت یا 📝 متن رسید را همینجا ارسال کنید.'),
+        ('invoice_plan_card', '🟩🟩⬜️ مرحله 2 از 3\n\n💳 پرداخت کارت به کارت\n\n🛒 {plan_name}\n💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n💳 شماره کارت:\n{card_number}\n\n👤 به نام: {card_holder}\n\n📸 پس از واریز، عکس رسید پرداخت را همینجا ارسال کنید.'),
         ('free_test_processing', '⚠️ این درخواست در حال پردازش/ثبت\u200cشده است.'),
         ('free_test_payment', 'روش پرداخت را انتخاب کنید:'),
         ('free_test_soon', '🎁 تست رایگان به\u200cزودی فعال می\u200cشود! منتظر باشید.'),
@@ -123,12 +122,12 @@ TEXT_CATEGORIES = OrderedDict({
     ],
     '📦 سرویس\u200cهای من': [
         ('configs_empty', '📱 شما هنوز هیچ سرویسی خریداری نکرده\u200cاید.\n\nبرای خرید، از «🛒 خرید اشتراک» اقدام کنید.'),
-        ('configs_has', '📱 سرویس‌های شما\n\nکدوم دسته رو می‌خوای ببینی؟ 👇'),
+        ('configs_has', '📱 سرویس\u200cهای شما\n\nکدوم دسته رو می\u200cخوای ببینی؟ 👇'),
         ('my_configs_empty', '📱 شما هنوز هیچ سرویسی خریداری نکرده\u200cاید.\n\nبرای خرید، از «🛒 خرید اشتراک» اقدام کنید.'),
-        ('my_configs_has', '📱 سرویس‌های شما\n\nکدوم دسته رو می‌خوای ببینی؟ 👇'),
+        ('my_configs_has', '📱 سرویس\u200cهای شما\n\nکدوم دسته رو می\u200cخوای ببینی؟ 👇'),
         ('vip_configs_empty', 'شما هنوز هیچ سرویس VIPی خریداری نکرده\u200cاید.'),
-        ('vip_configs_has', 'سرویس‌های VIP شما\n\nبرای مشاهده‌ی لینک سابسکریپشن و مدیریت هرکدام، روی نام آن بزنید 👇'),
-        ('service_detail_text', '📦 {plan}\n{live_status}\n\n📊وضعیت مصرف (لحظه‌ای):\n💿 حجم کل: {total}\n📲 مصرف‌شده: {used}\n📱 باقی‌مانده: {remaining}\n\n{bar} {percent}٪ مصرف شده\n\n⏰ تاریخ انقضا: {expiry}\n{expiry_status}\n\n🔗 این لینک ساب (Subscription) شماست؛ می‌توانید کانفیگ‌های خودتان را از داخل آن بردارید و حجم مصرفی‌تان را مدیریت کنید:\n\n{link}\n\n📆 تاریخ خرید: {purchase_date}'),
+        ('vip_configs_has', 'سرویس\u200cهای VIP شما\n\nبرای مشاهده\u200cی لینک سابسکریپشن و مدیریت هرکدام، روی نام آن بزنید 👇'),
+        ('service_detail_text', '📦 {plan}\n\n📊وضعیت مصرف (لحظه\u200cای):\n💿 حجم کل: {total}\n📲 مصرف\u200cشده: {used}\n📱 باقی\u200cمانده: {remaining}\n\n{bar} {percent}٪ مصرف شده\n\n⏰ تاریخ انقضا: {expiry}\n{expiry_status}\n\n🔗 این لینک ساب (Subscription) شماست؛ می\u200cتوانید کانفیگ\u200cهای خودتان را از داخل آن بردارید و حجم مصرفی\u200cتان را مدیریت کنید:\n\n`{link}`\n\n📆 تاریخ خرید: {purchase_date}'),
         ('config_detail_error', '❌ خطا در نمایش جزئیات سرویس. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.'),
         ('config_status_title', '📊 وضعیت مصرف (لحظه\u200cای):'),
         ('config_total', '   • حجم کل: {value}'),
@@ -175,50 +174,9 @@ TEXT_CATEGORIES = OrderedDict({
         ('subscription_unavailable', '❌ لینک ساب در حال حاضر در دسترس نیست. کمی بعد دوباره امتحان کنید.'),
         ('qr_missing', '❌ کیوآرکدی برای این سرویس ثبت نشده.'),
         ('qr_failed', '❌ ارسال کیوآرکد ناموفق بود.'),
-    ('renew_menu_title', '🔁 تمدید سرویس'),
-    ('renew_choose_service', '🔁 سرویس موردنظر برای تمدید را انتخاب کنید 👇'),
-    ('renew_service_title', '🔁 تمدید سرویس «{service_name}»'),
-    ('renew_service_button', '🔁 {service_name}'),
-    ('renew_volume_prompt', '📦 مقدار حجمی که می‌خواهید به سرویس اضافه شود را انتخاب کنید:'),
-    ('renew_volume_10', '۱۰ گیگ'),
-    ('renew_volume_20', '۲۰ گیگ'),
-    ('renew_volume_30', '۳۰ گیگ'),
-    ('renew_volume_40', '۴۰ گیگ'),
-    ('renew_volume_50', '۵۰ گیگ'),
-    ('renew_days_30', '۳۰ روز'),
-    ('renew_days_60', '۶۰ روز'),
-    ('renew_days_90', '۹۰ روز'),
-    ('renew_volume_custom', '➕ مقدار دلخواه'),
-    ('renew_custom_volume_prompt', '📦 مقدار حجم اضافه را به گیگ وارد کنید (بیشتر از ۵۰):'),
-    ('renew_days_prompt', '⏳ مقدار زمان اضافه را انتخاب کنید:'),
-    ('renew_days_custom', '➕ زمان دلخواه'),
-    ('renew_custom_days_prompt', '⏳ تعداد روز اضافه را وارد کنید:'),
-    ('renew_summary', '🧾 تمدید سرویس «{service_name}»\n\n📦 حجم اضافه: {volume}\n⏳ زمان اضافه: {days}\n💰 مبلغ: {price:,} تومان\n\nروش پرداخت را انتخاب کنید:'),
-    ('renew_card_invoice', '🟩🟩⬜️ مرحله 2 از 3\n\n💳 پرداخت کارت به کارت\n\n🔁 تمدید سرویس: {service_name}\n📦 حجم اضافه: {volume}\n⏳ زمان اضافه: {days}\n💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n💳 شماره کارت:\n{card_number}\n\n👤 به نام: {card_holder}\n\n📸 پس از واریز، عکس رسید پرداخت یا 📝 متن رسید را همینجا ارسال کنید.'),
-    ('renew_card_registered', '✅ رسید تمدید ثبت شد. پس از تأیید ادمین، حجم/زمان جدید به سرویس شما اضافه می‌شود.'),
-    ('renew_approved', '✅ تمدید سرویس شما تأیید شد و تغییرات روی سرویس اعمال می‌شود.'),
-    ('renew_details_title', 'جزئیات تمدید'),
-    ('renew_volume_only_detail', 'حجم\n{previous_volume}  ⬅️  {added_volume}  ⬅️  {new_volume}'),
-    ('renew_days_only_detail', 'مدت زمان\n{previous_days}  ⬅️  {added_days}  ⬅️  {new_days}'),
-    ('renew_volume_days_detail', 'حجم\n{previous_volume}  ⬅️  {added_volume}  ⬅️  {new_volume}\n\nمدت زمان\n{previous_days}  ⬅️  {added_days}  ⬅️  {new_days}'),
-    ('renew_details_empty', 'تغییری برای تمدید ثبت نشده است.'),
-    ('renew_done', 'تمدید سرویس «{service_name}» با موفقیت انجام شد.\n\n{details}\n\n✨ تمدید با موفقیت روی سرویس شما اعمال شد.'),
-    ('renew_cancelled', '🔙 عملیات تمدید لغو شد و هیچ تغییری در تنظیمات سرویس ایجاد نشد.'),
-    ('service_live_active', '🟢 فعال'),
-    ('service_live_expired', '🔴 منقضی'),
-    ('notif_fair_use', '⚖️ هشدار مصرف منصفانه\n\n📦 {plan}\n\nشما به سقف مصرف منصفانه {fair_use_gb} گیگابایت رسیدید.\nبرای ادامه، یکی از گزینه‌های زیر را انتخاب کنید:'),
-    ('fair_use_continue', '⚖️ استفاده از حجم منصفانه'),
-    ('fair_use_buy_new', '🛒 خرید سرویس جدید'),
-    ('fair_use_selected', '✅ درخواست استفاده از حجم منصفانه برای سرویس شما ثبت شد و به ادمین اطلاع داده شد.'),
-    ('notif_left_required', '⚠️ عضویت شما در کانال اجباری لغو شده است.\n\nبرای ادامه استفاده از ربات، دوباره در کانال‌های زیر عضو شوید و سپس «عضویت را بررسی کن» را بزنید 👇'),
-    ('crypto_not_configured', '❌ پرداخت ارزی هنوز توسط ادمین تنظیم نشده است.'),
-    ('crypto_asset_unavailable', '❌ این ارز در حال حاضر در دسترس نیست.'),
     ],
     '⚙️ عملیات سرویس': [
         ('config_enable', '▶️ فعال\u200cسازی سرویس'),
-        ('config_disable', '⏸ غیرفعال\u200cسازی سرویس'),
-        ('config_revoke', '🔄 ساخت لینک ساب جدید'),
-        ('config_delete', '🗑 حذف سرویس'),
         ('confirm_delete_yes', '✅ بله، حذف کن'),
         ('confirm_delete_no', '❌ انصراف'),
         ('confirm_disable_yes', '✅ بله، غیرفعال کن'),
@@ -244,12 +202,17 @@ TEXT_CATEGORIES = OrderedDict({
         ('service_revoke_done', '✅ لینک ساب جدید ساخته شد؛ برای دیدنش وارد جزئیات سرویس شو.'),
         ('config_back_service', '🔙 بازگشت به سرویس'),
     ],
+    '🔧 دکمه‌های مدیریت سرویس': [
+        ('config_disable', '⏸ غیرفعال\u200cسازی سرویس'),
+        ('config_revoke', '🔄 ساخت لینک ساب جدید'),
+        ('config_delete', '🗑 حذف سرویس'),
+    ],
     '👥 دعوت دوستان': [
         ('referral_overview', '👥 دعوت دوستان و کسب درآمد 💸\n\nدوستانتو دعوت کن و به\u200cازای هر دعوت موفق، {reward:,} تومان پاداش نقدی بگیر! 🎁\nکافیه لینک اختصاصی\u200cت رو برای دوستات، گروه\u200cها یا کانال\u200cهایی که توشون عضوی بفرستی.\n\n🔗 لینک اختصاصی شما:\n{invite_link}\n\n🔑 کد اختصاصی: {invite_code}\n\n👤 تعداد دعوت: {invited_count}\n✅ دعوت\u200cهای موفق: {successful_invites}\n🔓 مبلغ آزاد شده: {released:,} تومان\n🔒 مبلغ در انتظار: {locked:,} تومان\n\nℹ️ به\u200cازای هر دوستی که با لینک شما عضو شود و یک خرید حجم {min_gb} گیگ یا بیشتر انجام دهد، {reward:,} تومان به\u200cصورت خودکار و بدون نیاز به هیچ اقدام دیگری به کیف پول شما آزاد می\u200cشود. (تست رایگان و خریدهای کمتر از {min_gb} گیگ پاداش را آزاد نمی\u200cکنند)\n\n⚠️ لطفاً فقط لینک را برای افراد واقعی ارسال کنید؛ استفاده از اکانت\u200cهای فیک تقلب محسوب شده و جایزه شما لغو می\u200cشود.'),
         ('referral_back', '🏠 بازگشت به منوی اصلی'),
     ],
     '👨\u200d💻 پشتیبانی و نمایندگی': [
-        ('support_intro', '👨‍💻 پشتیبانی\n\nاگر به هر چالشی برخورد کردید که از طریق راهنما ربات هم براتون حل نشد،\nمی‌تونید مستقیم تیکت بزنید یا از ارتباط با پشتیبان استفاده کنید 👇'),
+        ('support_intro', '👨\u200d💻 پشتیبانی\n\nمی\u200cتونی مستقیم تیکت بزنی یا از کانال اصلی و پشتیبان استفاده کنی 👇'),
         ('support_ticket', '🎫 ارسال تیکت'),
         ('support_channels', '📢 کانال اصلی و پشتیبان'),
         ('support_back', '🏠 بازگشت به منوی اصلی'),
@@ -292,9 +255,7 @@ TEXT_CATEGORIES = OrderedDict({
         ('notif_receipt_rejected', '❌ متأسفانه رسید پرداخت شما تأیید نشد. با پشتیبانی تماس بگیرید.'),
         ('notif_usage_80', '🔔 هشدار حجم مصرفی سرویس\n\n📦 {plan}\n\n{bar}\n✅ شما تا الان {percent}٪ از حجم سرویستون رو مصرف کردید.\n\nبرای جلوگیری از قطعی سرویس، پیشنهاد می\u200cکنیم همین الان تمدید کنید 🔁'),
         ('notif_usage_90', '🔔 هشدار حجم مصرفی سرویس\n\n📦 {plan}\n\n{bar}\n⚠️ شما تا الان {percent}٪ از حجم سرویستون رو مصرف کردید.\n\nبرای جلوگیری از قطعی سرویس، پیشنهاد می\u200cکنیم همین الان تمدید کنید 🔁'),
-        ('notif_renew_service_button', 'تمدید همین سرویس'),
-        ('notif_buy_new_service_button', 'خرید سرویس جدید'),
-        ('notif_expiry', '❌ سرویس شما به پایان رسید\n\n📦 {plan}\n\n🔴 حجم یا زمان سرویس شما تمام شده و این سرویس منقضی شده است.\n\nبرای ادامه استفاده از این سرویس، می‌توانید همین سرویس را تمدید کنید یا سرویس جدید بخرید.'),
+        ('notif_expiry', '⏰ هشدار پایان سرویس\n\n📦 {plan}\n\n🟨 سرویس شما {days_text}!\n\nبرای جلوگیری از قطعی، همین الان تمدید کنید 🔁'),
         ('orders_opened', '🟢 ربات مجدداً فعال شد!'),
         ('notif_orders_closed_suffix', 'روشن شدن دوباره\u200cی آن اطلاع\u200cرسانی خواهد شد.'),
         ('notif_orders_opened_suffix', 'با زدن /start می\u200cتوانید دوباره سفارش ثبت کنید.'),
@@ -333,23 +294,6 @@ TEXT_CATEGORIES.setdefault("🎛 دکمه‌های کاربر", []).extend([
     ("crypto_asset_trx", "🔴 TRX"),
     ("crypto_asset_usdt", "🟢 USDT (TRC20)"),
     ("crypto_receipt_hint", "📨 ارسال رسید / Hash"),
-    ("renew_pay_card", "💳 پرداخت کارت به کارت"),
-    ("renew_pay_crypto", "💱 پرداخت ارزی"),
-    ("renew_pay_back", "🔙 بازگشت"),
-    ("renew_cancel", "❌ لغو تمدید"),
-    ("renew_volume_10", "۱۰ گیگ"),
-    ("renew_volume_20", "۲۰ گیگ"),
-    ("renew_volume_30", "۳۰ گیگ"),
-    ("renew_volume_40", "۴۰ گیگ"),
-    ("renew_volume_50", "۵۰ گیگ"),
-    ("renew_volume_choice", "💾 {value} گیگ"),
-    ("renew_days_30", "۳۰ روز"),
-    ("renew_days_60", "۶۰ روز"),
-    ("renew_days_90", "۹۰ روز"),
-    ("renew_days_choice", "⏱ {value} روز"),
-    ("renew_day_options", "گزینه‌های روز"),
-    ("renew_gb_options", "گزینه‌های گیگ"),
-    ("renew_card_invoice", "🟩🟩⬜️ مرحله 2 از 3\n\n💳 پرداخت کارت به کارت\n\n🔁 تمدید سرویس: {service_name}\n📦 حجم اضافه: {volume}\n⏳ زمان اضافه: {days}\n💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n💳 شماره کارت:\n{card_number}\n\n👤 به نام: {card_holder}\n\n📸 پس از واریز، عکس رسید پرداخت یا 📝 متن رسید را همینجا ارسال کنید."),
 ])
 
 # 💳 متن‌های پرداخت و فاکتورها — همه از پنل «مدیریت متن‌های کاربر» قابل ویرایش‌اند.
@@ -369,7 +313,7 @@ TEXT_CATEGORIES.setdefault("💳 پرداخت و فاکتورها", []).extend([
     ("online_payment_check", "✅ بررسی پرداخت"),
     ("online_payment_cancel", "🔙 انصراف"),
     ("crypto_payment_intro", "💱 پرداخت ارزی\n\n🛒 {plan_name}\n💰 قیمت سرویس: {price:,} تومان\n⏱ اعتبار این فاکتور: ۳۰ دقیقه — تا ساعت {deadline}\n\nتعرفه لحظه‌ای پرداخت:\n{available_rows}{stale_note}\n\nارز موردنظر را انتخاب کن تا آدرس کیف پول و جزئیات واریز نمایش داده شود."),
-    ("crypto_payment_detail", "🟩🟩⬜️ مرحله 2 از 3\n\n💱 پرداخت ارزی\n\n🛒 {plan_name}\n💰 مبلغ قابل پرداخت: {price:,} تومان\n💵 مبلغ پرداختی: {amount} {asset}\n\n🌐 شبکه: {network}\n👛 ولت: برای دریافت آدرس و کپی، دکمه «📋 کپی ولت» را بزنید.\n\n📸 پس از واریز، عکس رسید پرداخت یا 📝 متن/Hash تراکنش را همینجا ارسال کنید.\n⏱ این فاکتور تا ساعت {deadline} (۳۰ دقیقه) معتبر است. پس از پایان مهلت، فاکتور به‌طور خودکار منقضی و حذف می‌شود."),
+    ("crypto_payment_detail", "💱 پرداخت با {asset}\n\n🛒 {plan_name}\n💰 قیمت سرویس: {price:,} تومان\n💵 مبلغ قابل پرداخت: {amount} {asset}\n\n🌐 شبکه: {network}\n💳 آدرس کیف پول:\n{wallet}\n\n⚠️ فقط روی همین شبکه و دقیقاً همین مبلغ واریز کن.\n📸 یا 📝 بعد از واریز، رسید را همینجا بفرست؛ می‌تواند عکس رسید یا متن/Hash تراکنش باشد."),
     ("crypto_choose_asset_intro", "💱 انتخاب ارز برای «{plan_name}»\n\n💰 {price:,} تومان\n\n{rows}"),
     ("crypto_receipt_hint_alert", "📸 عکس رسید یا 📝 متن/Hash تراکنش را همینجا ارسال کن."),
     ("invoice_copy_amount", "📋 کپی مبلغ به ریال"),
@@ -385,40 +329,22 @@ TEXT_CATEGORIES.setdefault("📦 تحویل سرویس", []).extend([
     ("service_delivery_text",
      "✅ سرویس شما با موفقیت تحویل داده شد\n\n"
      "👤 نام کاربری : {service_label}\n\n"
-     "🔗 لینک کانفینگ شما:\n{link}\n\n"
+     "🔗 لینک کانفیگ شما:\n{link}\n\n"
      "📋 لینک را کپی کنید و داخل برنامه‌تان جایگذاری کنید.\n\n"
-     "برای دریافت اپلیکیشن یا آشنایی با نحوه متصل کردن کانفینگ، از دو گزینه زیر استفاده کنید 👇"),
+     "💬 پیام ادمین : {admin_message}\n\n"
+     "برای دریافت اپلیکیشن یا آشنایی با نحوه متصل کردن کانفیگ، از دو گزینه زیر استفاده کنید 👇"),
     ("service_delivery_test_text",
-     "🧪 تست رایگان شما با موفقیت تحویل داده شد\n\n"
+     "🎁 تست رایگان شما با موفقیت تحویل داده شد\n\n"
      "👤 نام کاربری : {service_label}\n\n"
-     "🔗 لینک کانفینگ شما:\n{link}\n\n"
+     "🔗 لینک کانفیگ شما:\n{link}\n\n"
      "📋 لینک را کپی کنید و داخل برنامه‌تان جایگذاری کنید.\n\n"
-     "برای دریافت اپلیکیشن یا آشنایی با نحوه متصل کردن کانفینگ، از دو گزینه زیر استفاده کنید 👇"),
+     "💬 پیام ادمین : {admin_message}\n\n"
+     "برای دریافت اپلیکیشن یا آشنایی با نحوه متصل کردن کانفیگ، از دو گزینه زیر استفاده کنید 👇"),
     ("service_delivery_apps_button", "📱 دریافت اپلیکیشن"),
     ("service_delivery_connection_button", "🔧 نحوه اتصال کانفینگ"),
     ("service_delivery_test_apps_button", "📱 دریافت اپلیکیشن"),
     ("service_delivery_test_connection_button", "🔧 نحوه اتصال کانفینگ"),
-     ("admin_delivery_summary", "👤 مشتری: {customer}\n🆔 Telegram ID: {telegram_id}\n👤 نام سرویس: {service_username}\nنام بسته: {package_name}\n💰 مبلغ: {amount:,} تومان\n⏰ زمان: {time} (به وقت تهران)"),
-     ("admin_renew_card_receipt", "رسید تمدید سرویس\n\nمشتری: {customer}\nTelegram ID: {telegram_id}\nنام سرویس: {service_username}\nنام بسته: {package_name}\nدسته: {category_name}\nجزئیات تمدید: {renew_details}\nمبلغ: {amount:,} تومان"),
 
-])
-
-
-# 🎫 مدیریت تیکت — متن‌ها و دکمه‌ها از ویرایشگر و Premium/Custom Emoji پشتیبانی می‌کنند.
-TEXT_CATEGORIES.setdefault("🎫 مدیریت تیکت", []).extend([
-    ("admin_tickets", "مدیریت تیکت"),
-    ("admin_tickets_open", "تیکت‌های باز ({count})"),
-    ("admin_tickets_unanswered", "تیکت‌های پاسخ‌داده‌نشده ({count})"),
-    ("admin_tickets_closed", "تیکت‌های بسته ({count})"),
-    ("admin_ticket_reply", "پاسخ به تیکت"),
-    ("admin_ticket_close", "بستن تیکت"),
-    ("admin_ticket_reopen", "باز کردن تیکت"),
-    ("admin_ticket_back", "بازگشت"),
-    ("admin_ticket_reply_prompt", "پاسخ خود را برای این تیکت ارسال کنید:"),
-    ("admin_ticket_not_found", "تیکت پیدا نشد یا دیگر قابل مدیریت نیست."),
-    ("admin_ticket_closed_notice", "این تیکت بسته شد."),
-    ("admin_ticket_reopened_notice", "این تیکت دوباره باز شد."),
-    ("ticket_user_reply_prefix", "پاسخ پشتیبانی:"),
 ])
 
 
@@ -439,51 +365,8 @@ TEXT_CATEGORIES.setdefault("🗂 مدیریت دسته‌بندی VIP", []).exte
 TEXT_CATEGORIES.setdefault('🧩 سایر متن‌ها', []).append(('free_test_registered', '✅ درخواست تست رایگان شما ثبت شد!\n\nسرویس شما به زودی ارسال میشود.\n\n❗️ این کانفینگ فقط جهت تست سرعت برای شما کاربر عزیز فراهم شده و کاربرد دیگه ای ندارد.'))
 
 TEXT_CATEGORIES.setdefault("🛒 خرید اشتراک", []).extend([
-    ("vip_category_title", "{category_name}:\n\nسرویس‌های VIP (V2Ray) 🌐\n\nیکی از دسته‌ها را انتخاب کنید 👇"),
+    ("vip_category_title", "🚀 {category_name}"),
     ("vip_plan_admin_detail", "📦 {plan_name}\n\n💰 قیمت: {price:,} تومان\n🗜 حجم: {volume} گیگ\n⏳ مدت: {days} روز\n👥 سقف کاربر: {user_limit}\n🗂 دسته: {category}"),
-])
-
-# 🛡️ مدیریت پنل پاسارگارد — همه متن‌های این بخش از ویرایشگر پشتیبانی می‌کنند.
-TEXT_CATEGORIES.setdefault("🛡️ مدیریت پنل پاسارگارد", []).extend([
-    ("admin_manage_pasargad", "🛡️ مدیریت پنل‌های پاسارگارد"),
-    ("admin_panels_intro", "🛡️ مدیریت پنل‌های پاسارگارد\n\nهر پنل یک نمونه مستقل است."),
-    ("admin_panel_add", "➕ افزودن پنل"),
-    ("admin_panel_test", "🔌 تست اتصال"),
-    ("admin_panel_enable", "✅ فعال کردن"),
-    ("admin_panel_disable", "⛔ غیرفعال کردن"),
-    ("admin_panel_edit", "✏️ ویرایش اطلاعات"),
-    ("admin_panel_delete", "🗑 حذف پنل"),
-    ("admin_panel_back_list", "🔙 لیست پنل‌ها"),
-    ("admin_panel_name", "📝 نام پنل"),
-    ("admin_panel_url", "🌐 آدرس پنل"),
-    ("admin_panel_username", "👤 نام کاربری"),
-    ("admin_panel_password", "🔑 رمز عبور"),
-    ("admin_panel_name_prompt", "➕ نام پنل را بفرستید:"),
-    ("admin_panel_url_prompt", "🌐 آدرس پایه پنل را بفرستید:"),
-    ("admin_panel_username_prompt", "👤 نام کاربری پنل را بفرستید:"),
-    ("admin_panel_password_prompt", "🔑 رمز عبور پنل را بفرستید:"),
-    ("admin_panel_value_required", "❌ مقدار نمی‌تواند خالی باشد."),
-    ("admin_panel_invalid_url", "❌ آدرس نامعتبر است."),
-    ("admin_panel_edit_choose", "✏️ مشخصه موردنظر را انتخاب کنید:"),
-    ("admin_panel_edit_value", "✏️ مقدار جدید را ارسال کنید:"),
-    ("admin_panel_testing", "⏳ در حال تست اتصال..."),
-    ("admin_panel_connection_ok", "✅ اتصال موفق بود."),
-    ("admin_panel_saved_test_failed", "⚠️ پنل ذخیره شد ولی تست اتصال ناموفق بود:\n{msg}"),
-    ("admin_panel_detail", "🛡️ {name}\n\nوضعیت: {status}\nآدرس: {url}\nروش اتصال: Username / Password"),
-])
-
-# 🛡️ پیام‌های مدیریتی رسید ارزی
-TEXT_CATEGORIES.setdefault("💳 پرداخت و فاکتورها", []).extend([
-    ("admin_crypto_receipt", "💱 رسید پرداخت ارزی\n\n👤 {name}\n🆔 {telegram_id}\n\n📦 بسته: {plan_name}\n💰 {price:,} تومان\n💵 {amount} {asset}\n📝 Hash/متن تراکنش: {hash_text}"),
-    ("admin_crypto_receipt_photo", "💱 رسید پرداخت ارزی\n\n👤 {name}\n🆔 {telegram_id}\n\n📦 بسته: {plan_name}\n💰 {price:,} تومان\n💵 {amount} {asset}"),
-     ("admin_crypto_renew_receipt", "رسید تمدید ارزی\n\nمشتری: {name}\nTelegram ID: {telegram_id}\nنام سرویس: {service_name}\nنام بسته: {plan_name}\nدسته: {category_name}\nجزئیات تمدید: {renew_details}\nمبلغ: {price:,} تومان\nمبلغ ارزی: {amount} {asset}"),
-     ("admin_crypto_renew_receipt_photo", "رسید تمدید ارزی\n\nمشتری: {name}\nTelegram ID: {telegram_id}\nنام سرویس: {service_name}\nنام بسته: {plan_name}\nدسته: {category_name}\nجزئیات تمدید: {renew_details}\nمبلغ: {price:,} تومان\nمبلغ ارزی: {amount} {asset}"),
-    ("admin_crypto_approve", "✅ تأیید پرداخت ارزی"),
-    ("admin_crypto_reject", "❌ رد پرداخت ارزی"),
-    ("admin_renew_approve", "تأیید تمدید"),
-    ("admin_renew_reject", "رد تمدید"),
-    ("crypto_receipt_invalid", "❌ لطفاً عکس رسید یا متن/Hash تراکنش را ارسال کنید."),
-    ("admin_crypto_photo_only", "📸 رسید تصویری ارسال شده؛ Hash متنی ثبت نشده است."),
 ])
 
 TEXTS = {key: default for items in TEXT_CATEGORIES.values() for key, default in items}
@@ -557,11 +440,8 @@ def _render_with_entities(template: str, entities: list[dict], values: dict) -> 
             src_n = len(token.encode("utf-16-le")) // 2
             try:
                 value = formatter.get_field(field, (), values)[0]
-                if conv:
-                    value = formatter.convert_field(value, conv)
-                value = formatter.format_field(value, spec)
             except Exception:
-                value = "{" + field + (":" + spec if spec else "") + "}"
+                value = "{" + field + "}"
             value = str(value)
             parts.append(value)
             out_n = len(value.encode("utf-16-le")) // 2
@@ -590,12 +470,6 @@ def _render_with_entities(template: str, entities: list[dict], values: dict) -> 
                         })
             except Exception:
                 pass
-            # 🆕 فیکس: قبل از این خط src_pos/out_pos بعد از هر placeholder هرگز جلو
-            # نمی‌رفت، بنابراین تمام entityهای (از جمله Premium Emojiها) بعد از اولین
-            # placeholder با موقعیت اشتباه محاسبه می‌شدند. همین باعث می‌شد در متن‌هایی
-            # با چند placeholder (مثل پروفایل) فقط ایموجی‌های قبل از اولین placeholder
-            # درست premium نمایش داده شوند و بقیه یا جابه‌جا یا کلاً حذف شوند.
-            src_pos += src_n; out_pos += out_n
 
     rendered = "".join(parts)
     rendered_units = len(rendered.encode("utf-16-le")) // 2
@@ -626,37 +500,33 @@ def _render_with_entities(template: str, entities: list[dict], values: dict) -> 
     return RichText(rendered, out_entities)
 
 
-
 def _sanitize_service_detail_template(key: str, template):
-    """قالب قدیمی جزئیات سرویس را کنار می‌گذارد تا Override قبلی DB فرم قدیمی را برنگرداند."""
-    if key != "service_detail_text" or not isinstance(template, str):
+    """قالب قدیمی جزئیات سرویس را کنار می‌گذارد تا override قدیمی DB دوباره برنگردد."""
+    if key != "service_detail_text":
         return template
-    if any(token in template for token in ("{status}", "{service_name}", "{location}", "{requested_at}", "{delivery_duration}", "{last_connection}", "{last_update}", "{client}")):
+    if not isinstance(template, str):
+        return template
+    # این placeholderها متعلق به قالب قدیمی هستند و نباید با قالب اصلی سرویس مخلوط شوند.
+    if "{status}" in template or "{service_name}" in template or "{location}" in template:
         return TEXTS.get(key, template)
-    # Markdown code fences around the subscription URL are unsafe here: the URL
-    # may contain underscores and Telegram Markdown can consume them. The URL
-    # must be emitted byte-for-byte as received from the panel.
-    template = template.replace("`{link}`", "{link}")
+    return template
+
+
+def _sanitize_delivery_template(key: str, template):
+    """قالب‌های تحویل را دستکاری نکن؛ {admin_message} باید در زمان ارسال مقداردهی شود."""
     return template
 
 
 def text(key: str, default: str | None = None, **values) -> str:
     if key not in _CACHE:
         raw_template = db.get_text_override(key, TEXTS.get(key, default or ""))
-        template = _sanitize_service_detail_template(key, raw_template)
-        entities = db.get_text_override_entities(key)
-        # اگر فقط Markdown قدیمی دور {link} پاک شده، Entityهای Premium Emoji را
-        # نگه می‌داریم؛ فقط Overrideهای واقعاً قدیمی با ساختار قبلی باید پاک شوند.
-        legacy_template = isinstance(raw_template, str) and any(
-            token in raw_template
-            for token in (
-                "{status}", "{service_name}", "{location}", "{requested_at}",
-                "{delivery_duration}", "{last_connection}", "{last_update}", "{client}",
-            )
-        )
-        if template != raw_template and legacy_template:
-            entities = []
-        _CACHE[key] = (template, entities)
+        template = _sanitize_delivery_template(key, raw_template)
+        template = _sanitize_service_detail_template(key, template)
+        stored_entities = db.get_text_override_entities(key)
+        # اگر override قدیمی را کنار گذاشتیم، entityهای همان override هم دیگر معتبر نیستند.
+        if key == "service_detail_text" and template != raw_template:
+            stored_entities = []
+        _CACHE[key] = (template, stored_entities)
     template, entities = _CACHE[key]
     if values:
         try:
