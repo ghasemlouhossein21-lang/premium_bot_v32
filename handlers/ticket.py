@@ -126,9 +126,8 @@ async def admin_tickets_open(callback: types.CallbackQuery):
         await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
     await edit_rich(callback.message,"مدیریت تیکت",reply_markup=admin_tickets_menu(db.get_ticket_counts())); await callback.answer()
 
-@router.message(F.text)
+@router.message(F.text == t("admin_tickets"))
 async def admin_tickets_reply_menu(message: types.Message, state: FSMContext):
-    if message.text != t("admin_tickets"): return
     if message.from_user.id != ADMIN_ID and not db.sub_admin_has_permission(str(message.from_user.id), "tickets"): return
     await state.clear(); await answer_rich(message,t("admin_tickets"),reply_markup=admin_tickets_menu(db.get_ticket_counts()))
 
