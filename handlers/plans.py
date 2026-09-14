@@ -229,43 +229,75 @@ def _save_renewal_snapshot(cfg: dict, snapshot: dict | None) -> None:
     db.update_config_expiry(int(cfg["id"]), expiry)
 
 
-def _renewal_confirmation_values(panel_data: dict | None, added_volume: float, added_days: int) -> dict:
-    """مقدار قبلی/افزوده/نهایی را از snapshot واقعی پنل برای پیام تأیید محاسبه می‌کند."""
+def _renewal_confirmation_values(panel_data: dict | None, added_volume: float, added_days: int, fallback_expiry=None) -> dict:
+    """باقی‌مانده واقعی قبل از تمدید، مقدار تمدید و باقی‌مانده جدید را محاسبه می‌کند."""
     import math, time
-    data=panel_data or {}
-    total=data.get("total")
+    data = panel_data or {}
+
+    # total در پنل «حجم کل» است، نه حجم باقی‌مانده؛ بنابراین برای نمایش
+    # نتیجه تمدید باید used را کم کنیم تا باقی‌مانده واقعی به دست بیاید.
+    total = data.get("total")
+    used = data.get("used", 0)
     if total is not None:
         try:
-            new_gb=float(total)/(1024**3)
-            if new_gb <= 0:
-                previous_volume=new_volume="نامحدود"
+            total_bytes = float(total)
+            used_bytes = float(used or 0)
+            remaining_bytes = max(0.0, total_bytes - used_bytes)
+            remaining_gb = remaining_bytes / (1024 ** 3)
+            if total_bytes <= 0:
+                previous_volume = new_volume = "نامحدود"
             elif added_volume:
-                previous_volume=f"{max(0,new_gb-float(added_volume)):g} گیگ"; new_volume=f"{new_gb:g} گیگ"
+                previous_gb = max(0.0, remaining_gb - float(added_volume))
+                previous_volume = f"{previous_gb:g} گیگ"
+                new_volume = f"{remaining_gb:g} گیگ"
             else:
-                previous_volume=new_volume=f"{new_gb:g} گیگ"
+                previous_volume = new_volume = f"{remaining_gb:g} گیگ"
         except Exception:
-            previous_volume=new_volume="نامشخص"
+            previous_volume = new_volume = "نامشخص"
     else:
-        previous_volume=new_volume="نامشخص" if added_volume else "بدون تغییر"
-    if not added_volume and total is None:
-        previous_volume=new_volume="بدون تغییر"
-    expire=data.get("expire")
-    if expire:
+        previous_volume = new_volume = "بدون تغییر" if not added_volume else "نامشخص"
+
+    expire = data.get("expire") if "expire" in data else fallback_expiry
+    if expire is None or str(expire).strip().lower() in ("", "none"):
+        expire = fallback_expiry
+    if str(expire).strip() in ("0", "0.0"):
+        previous_days = new_days_text = "نامحدود"
+    elif expire:
         try:
-            new_days=max(0,int(math.ceil((int(expire)-time.time())/86400)))
-            if added_days:
-                previous_days=f"{max(0,new_days-int(added_days))} روز"; new_days_text=f"{new_days} روز"
+            # پنل‌ها ممکن است timestamp ثانیه/میلی‌ثانیه یا تاریخ ISO برگردانند.
+            if isinstance(expire, (int, float)) or str(expire).strip().replace(".", "", 1).isdigit():
+                exp_value = float(expire)
+                if exp_value > 100000000000:
+                    exp_value /= 1000.0
+                new_days = max(0, int(math.ceil((exp_value - time.time()) / 86400)))
             else:
-                previous_days=new_days_text=f"{new_days} روز"
+                from datetime import datetime, date
+                from zoneinfo import ZoneInfo
+                raw_expire = str(expire).strip().replace("Z", "+00:00")
+                try:
+                    exp_dt = datetime.fromisoformat(raw_expire)
+                except ValueError:
+                    exp_dt = datetime.strptime(raw_expire[:10], "%Y-%m-%d")
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=ZoneInfo("Asia/Tehran"))
+                new_days = max(0, int(math.ceil((exp_dt.timestamp() - time.time()) / 86400)))
+            if added_days:
+                previous_days = f"{max(0, new_days - int(added_days))} روز"
+                new_days_text = f"{new_days} روز"
+            else:
+                previous_days = new_days_text = f"{new_days} روز"
         except Exception:
-            previous_days=new_days_text="نامشخص"
+            previous_days = new_days_text = "نامشخص"
     else:
-        previous_days=new_days_text="نامحدود"
+        previous_days = new_days_text = "نامحدود"
+
     return {
         "added_volume": f"+{float(added_volume):g} گیگ" if added_volume else "بدون تغییر",
-        "previous_volume": previous_volume, "new_volume": new_volume,
+        "previous_volume": previous_volume,
+        "new_volume": new_volume,
         "added_days": f"+{int(added_days)} روز" if added_days else "بدون تغییر",
-        "previous_days": previous_days, "new_days": new_days_text,
+        "previous_days": previous_days,
+        "new_days": new_days_text,
         "volume": f"{float(added_volume):g} گیگ" if added_volume else "بدون تغییر",
         "days": f"{int(added_days)} روز" if added_days else "بدون تغییر",
     }
@@ -932,7 +964,7 @@ async def check_online_payment(callback: types.CallbackQuery):
         added_volume = float(payload.get("volume_gb") or 0)
         added_days = int(payload.get("days") or 0)
         service_name = alerts.get_config_service_username(cfg, panel_data)
-        await answer_rich(callback.message, t("renew_done", service_name=service_name, details=_renewal_confirmation_details(panel_data, added_volume, added_days)))
+        await answer_rich(callback.message, t("renew_done", service_name=service_name, details=_renewal_confirmation_details(panel_data, added_volume, added_days, fallback_expiry=cfg.get("expiry") if cfg else None)))
         try:
             await alerts.log_renewal_to_channel(callback.bot, db.get_user_by_id(cfg["user_id"]) or {}, cfg, panel_data, int(payment.get("price") or 0), added_volume, added_days)
         except Exception:
@@ -1195,17 +1227,17 @@ def _renew_validate(settings: dict, volume_gb: float, days: int) -> tuple[bool, 
     return True, ""
 
 
-def _renewal_confirmation_details(panel_data: dict | None, added_volume: float, added_days: int) -> str:
+def _renewal_confirmation_details(panel_data: dict | None, added_volume: float, added_days: int, fallback_expiry=None) -> str:
     """نمایش تمیز نتیجه تمدید؛ فقط بخش‌هایی را نشان می‌دهد که واقعاً تمدید شده‌اند."""
-    values = _renewal_confirmation_values(panel_data, added_volume, added_days)
+    values = _renewal_confirmation_values(panel_data, added_volume, added_days, fallback_expiry=fallback_expiry)
     rows = []
     if added_volume:
         rows.append(
-            f"📦 حجم\n   {values['previous_volume']}  ➜  +{float(added_volume):g} گیگ  ➜  {values['new_volume']}"
+            f"📦 حجم\n   \u2066{values['previous_volume']}  ➜  +{float(added_volume):g} گیگ  ➜  {values['new_volume']}\u2069"
         )
     if added_days:
         rows.append(
-            f"⏳ مدت زمان\n   {values['previous_days']}  ➜  +{int(added_days)} روز  ➜  {values['new_days']}"
+            f"⏳ مدت زمان\n   \u2066{values['previous_days']}  ➜  +{int(added_days)} روز  ➜  {values['new_days']}\u2069"
         )
     if not rows:
         return "ℹ️ تغییری برای تمدید ثبت نشده است."
@@ -1396,7 +1428,7 @@ async def renew_pay_wallet(callback: types.CallbackQuery, state: FSMContext):
     added_volume = float(data.get("renew_volume_gb") or 0)
     added_days = int(data.get("renew_days") or 0)
     service_name = alerts.get_config_service_username(cfg, panel_data)
-    await answer_rich(callback.message, t("renew_done", service_name=service_name, details=_renewal_confirmation_details(panel_data, added_volume, added_days)))
+    await answer_rich(callback.message, t("renew_done", service_name=service_name, details=_renewal_confirmation_details(panel_data, added_volume, added_days, fallback_expiry=cfg.get("expiry") if cfg else None)))
     try:
         await alerts.log_renewal_to_channel(callback.bot, user, cfg, panel_data, price, added_volume, added_days)
     except Exception:
