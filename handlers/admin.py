@@ -24,15 +24,14 @@ from aiogram.types import FSInputFile
 import database as db
 import crypto
 import alerts
-from subscription import extract_meta, days_remaining, format_bytes, usage_bar, fetch_subscription_info, format_expire, enrich_configs_with_subscription_names, get_live_service_status
-from utils import parse_int_in_range, is_duplicate_action, now_tehran_naive, TEHRAN_TZ, STICKER_SECTION_LABELS, STICKER_FILES, STICKERS_DIR, invalidate_section_sticker_cache, send_notification_sticker, clean_numeric_id, TELEGRAM_TEXT_LIMIT, truncate_for_telegram, is_message_too_long_error, serialize_message_entities, message_entities_from_dicts, telegram_utf16_length
+from subscription import extract_meta, days_remaining, format_bytes, usage_bar, fetch_subscription_info, format_expire, enrich_configs_with_subscription_names
+from utils import parse_int_in_range, is_duplicate_action, now_tehran_naive, STICKER_SECTION_LABELS, STICKER_FILES, STICKERS_DIR, invalidate_section_sticker_cache, send_notification_sticker, clean_numeric_id, TELEGRAM_TEXT_LIMIT, truncate_for_telegram, is_message_too_long_error, serialize_message_entities, message_entities_from_dicts, telegram_utf16_length
 from states import AdminStates, UserStates
 import bot_info
 import payments
 import marzban
 import pasargad
 import vpn_panel
-import panels
 from config import (
     ADMIN_ID,
     DATABASE_PATH,
@@ -91,11 +90,8 @@ from keyboards import (
     admin_botinfo_menu,
     admin_botinfo_field_keyboard,
     admin_botinfo_channels_menu,
-    admin_renewal_categories_menu,
-    admin_renewal_category_menu,
-    admin_renewal_mode_menu,
-    admin_renewal_scope_menu,
-    admin_renewal_plan_menu,
+    admin_pasargad_menu,
+    admin_panel_choose_menu,
     admin_manage_admins_keyboard,
     admin_permissions_keyboard,
 )
@@ -103,9 +99,6 @@ from keyboards import (
 plan_type = db.plan_type  # نسخه‌ی DB-aware (دسته‌بندی‌های VIP را هم می‌شناسد)
 
 from text_catalog import TEXT_CATEGORIES, TEXTS, CATEGORY_BY_KEY, text as user_text, refresh as refresh_user_text
-from utils import send_photo_rich, edit_caption_rich
-from utils import send_rich
-from utils import answer_rich, edit_rich, _repair_custom_emoji_entities, _sanitize_entities_for_text
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
@@ -117,23 +110,22 @@ def _permission_for_message_text(text: str | None) -> str | None:
         "📥 صف درخواست‌ها": "requests",
         "👥 لیست کاربران": "users",
         "🔍 جستجوی کاربر": "users",
-        "🔎 جستجوی کانفیگ": "users",
         "📢 پیام همگانی": "broadcast",
         "🎟 مدیریت تخفیف": "discounts",
         "🤝 نمایندگی (تخفیف VIP)": "agency",
         "🗂 دسته‌بندی‌های VIP": "plans",
         "🛒 خرید اشتراک برای خودم": "plans",
-                "🛡️ مدیریت پنل‌های پاسارگارد": "vpn_panel",
-                "🤝 مدیریت دعوت‌ها": "referrals",
+        "📦 نگاشت پلن‌ها به پنل فعال": "vpn_panel",
+        "🛡️ اتصال پنل پاسارگارد": "vpn_panel",
+        "🔀 انتخاب پنل VPN فعال": "vpn_panel",
+        "🤝 مدیریت دعوت‌ها": "referrals",
         "📚 مدیریت راهنما": "guides",
         "🦖 لاگ خطاها": "logs",
         "ℹ️ اطلاعات ربات": "botinfo",
         "🎬 استیکرهای منو": "stickers",
         "💾 بکاپ": "backup",
         "🎁 تنظیم تست رایگان": "settings",
-        "🔁 تنظیمات تمدید": "settings",
         "📝 مدیریت متن‌های کاربر": "texts",
-        "مدیریت تیکت": "tickets",
         "🔴 خاموش کردن سفارشات": "orders_toggle",
         "🟢 روشن کردن سفارشات": "orders_toggle",
     }
@@ -149,13 +141,12 @@ def _permission_for_callback(data: str | None) -> str | None:
     groups = [
         (("admin_stats",), "stats"),
         (("admin_request_queue", "admin_order_queue", "dismissorder_", "clearorders", "marzbansend|"), "requests"),
-        (("admin_tickets", "admintickets_", "adminticket_", "ticketreply_", "ticketclose_", "ticketreopen_", "replyticket_"), "tickets"),
-        (("admin_userlist", "userpage_", "useropen_", "accounting_", "admin_search", "admin_config_search", "useractions_", "pm_", "toggleblock_", "deleteuser_", "deleteuserconfirm_", "svcs_", "svcdetail_", "svcdelete_", "svcrestore_", "svcpurge", "svcedit_"), "users"),
+        (("admin_userlist", "userpage_", "useropen_", "accounting_", "admin_search", "useractions_", "pm_", "toggleblock_", "deleteuser_", "deleteuserconfirm_", "svcs_", "svcdetail_", "svcdelete_", "svcrestore_", "svcpurge", "svcedit_"), "users"),
         (("admin_broadcast",), "broadcast"),
         (("admin_discount", "discdetail_", "discdelete", "discedit_", "discplan", "new_discount", "disctype_"), "discounts"),
         (("admin_agency", "new_agent", "deleteagent_", "agentopen_", "editagentpercent_"), "agency"),
         (("admin_vip_categories", "admin_buy_subscription", "newvip", "vip"), "plans"),
-        (("admin_pasargad_panels", "pp_", "pasargad_"), "vpn_panel"),
+        (("admin_marzban", "admin_pasargad", "admin_panel_choose", "panelchoose", "marz", "pasargad", "svcrevokesub_"), "vpn_panel"),
         (("admin_botinfo", "botinfo", "channel"), "botinfo"),
         (("admin_stickers", "sticker"), "stickers"),
         (("admin_referrals", "refpage_", "refdetail_"), "referrals"),
@@ -164,7 +155,7 @@ def _permission_for_callback(data: str | None) -> str | None:
         (("errlog",), "logs"),
         (("admin_backup",), "backup"),
         (("admin_orders_off", "admin_orders_on"), "orders_toggle"),
-        (("free_test", "admin_free_test_settings", "admin_renewal_settings", "renewset", "botinforenewal", "botinforenewcat_", "botinforenewgb_", "botinforenewday_"), "settings"),
+        (("free_test", "admin_free_test_settings"), "settings"),
     ]
     for prefixes, perm in groups:
         if any(d == x or d.startswith(x) for x in prefixes):
@@ -232,7 +223,7 @@ async def _notify_main_admin_action(bot, actor, action: str, target: str = "", d
         logger.exception("admin activity log failed")
     if actor_id != str(ADMIN_ID):
         try:
-            await send_rich(bot, ADMIN_ID, f"📝 گزارش عملکرد ادمین فرعی\n\n👤 {name}\n🆔 {actor_id}\n✅ عملیات: {action}\n🎯 مورد: {target or '-'}\nℹ️ جزئیات: {details or '-'}")
+            await bot.send_message(ADMIN_ID, f"📝 گزارش عملکرد ادمین فرعی\n\n👤 {name}\n🆔 {actor_id}\n✅ عملیات: {action}\n🎯 مورد: {target or '-'}\nℹ️ جزئیات: {details or '-'}")
         except Exception:
             logger.exception("notify main admin failed")
 
@@ -252,16 +243,16 @@ async def _reply_with_user_actions(target, text: str, uid, is_blocked: bool, *, 
     try:
         kb = admin_user_actions_keyboard(uid, is_blocked)
         if edit:
-            await edit_rich(target, text, reply_markup=kb)
+            await target.edit_text(text, reply_markup=kb)
         else:
-            await answer_rich(target, text, reply_markup=kb)
+            await target.answer(text, reply_markup=kb)
     except TelegramBadRequest as e:
         if "BUTTON_USER_PRIVACY_RESTRICTED" in str(e):
             kb = admin_user_actions_keyboard(uid, is_blocked, show_pm_link=False)
             if edit:
-                await edit_rich(target, text, reply_markup=kb)
+                await target.edit_text(text, reply_markup=kb)
             else:
-                await answer_rich(target, text, reply_markup=kb)
+                await target.answer(text, reply_markup=kb)
         else:
             raise
 
@@ -286,9 +277,9 @@ async def _finish_receipt_message(message: types.Message, note: str, queue_refre
         return
     empty_kb = types.InlineKeyboardMarkup(inline_keyboard=[])
     if message.photo:
-        await edit_caption_rich(message, caption=(message.caption or "") + note, reply_markup=empty_kb)
+        await message.edit_caption(caption=(message.caption or "") + note, reply_markup=empty_kb)
     else:
-        await edit_rich(message, (message.text or "") + note, reply_markup=empty_kb)
+        await message.edit_text((message.text or "") + note, reply_markup=empty_kb)
 
 
 
@@ -315,18 +306,14 @@ def _english_digits(value) -> str:
 
 
 def _delivery_service_label(plan_name, volume_gb, days, user_limit, plan_key=None) -> str:
-    """نام نمایشی تحویل سرویس؛ برای خرید VIP دقیقاً نام همان پلن خریداری‌شده است."""
+    """نام نمایشی تحویل سرویس بر اساس اطلاعات واقعی پلن خریداری‌شده."""
     if plan_key == FREE_TEST_PLAN_KEY:
         return "تست رایگان"
 
-    # نام پلن خریداری‌شده منبع حقیقت است؛ نباید از مشخصات فنی دوباره ساخته شود.
-    if plan_name and str(plan_name).strip():
-        return str(plan_name).strip()
-
-    # فقط برای مسیرهای قدیمی/ارسال دستی که پلن واقعی ندارند fallback نگه می‌داریم.
     volume_text = _format_volume_gb_label(volume_gb) if volume_gb is not None else "نامشخص"
     days_text = f"زمان {days} روزه" if days else "زمان نامحدود"
     user_limit_text = "نامحدود کاربر" if not user_limit else f"{user_limit} کاربر"
+
     return _english_digits(f"{volume_text} | {days_text} | {user_limit_text}")
 
 def _gb_from_bytes(num_bytes) -> float | None:
@@ -342,7 +329,7 @@ def _gb_from_bytes(num_bytes) -> float | None:
 async def admin_entry(message: types.Message):
     if not _is_admin(message.from_user.id):
         return  # کاربر عادی هیچ پاسخی نمی‌گیرد (نه حتی پیام خطا) - امنیتی
-    await answer_rich(message, "👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(message.from_user.id))
+    await message.answer("👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(message.from_user.id))
 
 
 @router.callback_query(F.data == "admin_back")
@@ -351,7 +338,7 @@ async def admin_back(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     await state.clear()
-    await edit_rich(callback.message, "👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(callback.from_user.id))
+    await callback.message.edit_text("👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(callback.from_user.id))
     await callback.answer()
 
 
@@ -363,7 +350,7 @@ async def admin_manage_admins(callback: types.CallbackQuery):
     # رفع باگ: اگر متن/دکمه دقیقاً همان چیزی باشد که الان روی پیام هست (مثلاً دوبار زدن روی دکمه)، تلگرام خطای "message is not modified"
     # می‌دهد که قبلاً گرفته نمی‌شد و به هندلر سراسری خطا می‌رفت و به کاربر "خطایی پیش آمد" نشان داده می‌شد.
     try:
-        await edit_rich(callback.message, "👮 مدیریت ادمین‌های فرعی\n\nادمین را انتخاب کنید یا ادمین جدید اضافه کنید:", reply_markup=admin_manage_admins_keyboard(db.get_all_sub_admins()))
+        await callback.message.edit_text("👮 مدیریت ادمین‌های فرعی\n\nادمین را انتخاب کنید یا ادمین جدید اضافه کنید:", reply_markup=admin_manage_admins_keyboard(db.get_all_sub_admins()))
     except TelegramBadRequest:
         pass
     await callback.answer()
@@ -374,7 +361,7 @@ async def admin_manage_admins_from_menu(message: types.Message, state: FSMContex
     if not _is_main_admin(message.from_user.id):
         return
     await state.clear()
-    await answer_rich(message, "👮 مدیریت ادمین‌های فرعی\n\nادمین را انتخاب کنید یا ادمین جدید اضافه کنید:", reply_markup=admin_manage_admins_keyboard(db.get_all_sub_admins()))
+    await message.answer("👮 مدیریت ادمین‌های فرعی\n\nادمین را انتخاب کنید یا ادمین جدید اضافه کنید:", reply_markup=admin_manage_admins_keyboard(db.get_all_sub_admins()))
 
 
 @router.callback_query(F.data == "subadm_add")
@@ -383,7 +370,7 @@ async def subadm_add(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("⛔ فقط ادمین اصلی دسترسی دارد.", show_alert=True); return
     await state.set_state(AdminStates.waiting_sub_admin_id)
     try:
-        await edit_rich(callback.message, 
+        await callback.message.edit_text(
             "آیدی عددی تلگرام ادمین فرعی را بفرستید. اگر خواستید نام هم ثبت شود این‌طور بفرستید:\n"
             "نام | آیدی\n"
             "مثال: علی پشتیبان | 123456789",
@@ -403,16 +390,16 @@ async def subadm_add_id(message: types.Message, state: FSMContext):
     else:
         tid, name = raw, raw
     if not tid.isdigit():
-        await answer_rich(message, "❌ فرمت درست نیست. فقط آیدی عددی یا «نام | آیدی» بفرستید.", reply_markup=admin_back_button()); return
+        await message.answer("❌ فرمت درست نیست. فقط آیدی عددی یا «نام | آیدی» بفرستید.", reply_markup=admin_back_button()); return
     try:
         db.add_sub_admin(tid, name=name or tid, permissions=[])
     except Exception:
         logger.exception("خطا در ثبت ادمین فرعی")
-        await answer_rich(message, "⚠️ ثبت آیدی با خطا مواجه شد. لطفاً دوباره تلاش کنید.", reply_markup=admin_back_button())
+        await message.answer("⚠️ ثبت آیدی با خطا مواجه شد. لطفاً دوباره تلاش کنید.", reply_markup=admin_back_button())
         return
     await _notify_main_admin_action(message.bot, message.from_user, "افزودن ادمین فرعی", tid, name or tid)
     await state.clear()
-    await answer_rich(message, "✅ ادمین فرعی اضافه شد. حالا قابلیت‌هایش را با تیک انتخاب کنید:", reply_markup=admin_permissions_keyboard(tid, []))
+    await message.answer("✅ ادمین فرعی اضافه شد. حالا قابلیت‌هایش را با تیک انتخاب کنید:", reply_markup=admin_permissions_keyboard(tid, []))
 
 @router.callback_query(F.data.startswith("subadm_") & ~F.data.startswith("subadmperm_") & ~F.data.startswith("subadmdel_"))
 async def subadm_open(callback: types.CallbackQuery):
@@ -423,7 +410,7 @@ async def subadm_open(callback: types.CallbackQuery):
     if not adm:
         await callback.answer("❌ ادمین یافت نشد.", show_alert=True); return
     try:
-        await edit_rich(callback.message, f"👤 ادمین فرعی: {tid}\n\nقابلیت‌ها را تیک بزنید/بردارید:", reply_markup=admin_permissions_keyboard(tid, adm.get("permissions") or []))
+        await callback.message.edit_text(f"👤 ادمین فرعی: {tid}\n\nقابلیت‌ها را تیک بزنید/بردارید:", reply_markup=admin_permissions_keyboard(tid, adm.get("permissions") or []))
     except TelegramBadRequest:
         pass
     await callback.answer()
@@ -455,7 +442,7 @@ async def subadm_toggle_perm(callback: types.CallbackQuery):
     # (که از آخرین /start او ساخته شده بود) همچنان قدیمی می‌ماند تا دوباره /start بزند. حالا
     # همینجا منوی پایین صفحه‌اش را با دسترسی‌های تازه دوباره برایش می‌فرستیم تا فوراً به‌روز شود.
     try:
-        await send_rich(callback.bot, 
+        await callback.bot.send_message(
             int(tid),
             "🔄 دسترسی‌های شما توسط ادمین اصلی به‌روزرسانی شد. منوی پایین صفحه شما براساس دسترسی‌های جدید به‌روز شد.",
             reply_markup=admin_reply_keyboard(permissions=set(perms), is_main_admin=False),
@@ -472,7 +459,7 @@ async def subadm_delete(callback: types.CallbackQuery):
     db.delete_sub_admin(tid)
     await _notify_main_admin_action(callback.bot, callback.from_user, "حذف ادمین فرعی", tid, "")
     try:
-        await edit_rich(callback.message, "✅ ادمین حذف شد.", reply_markup=admin_manage_admins_keyboard(db.get_all_sub_admins()))
+        await callback.message.edit_text("✅ ادمین حذف شد.", reply_markup=admin_manage_admins_keyboard(db.get_all_sub_admins()))
     except TelegramBadRequest:
         pass
     await callback.answer()
@@ -483,7 +470,7 @@ async def menu_admin_request_queue(message: types.Message):
         return
     order_count = len(db.get_pending_orders(limit=200))
     receipt_count = len(db.get_pending_receipts(limit=200))
-    await answer_rich(message, 
+    await message.answer(
         "📥 صف درخواست‌ها\n\nچه چیزی رو می‌خوای بررسی کنی؟ 👇",
         reply_markup=admin_request_queue_menu(order_count, receipt_count),
     )
@@ -499,14 +486,14 @@ async def menu_admin_agency(message: types.Message):
         if not agents else
         "🤝 نمایندگان فعلی (تخفیف خودکار روی VIP)\n\nروی هرکدام بزنید تا مثل بخش «کاربران» مدیریتش کنید 👇"
     )
-    await answer_rich(message, text, reply_markup=admin_agency_menu(agents))
+    await message.answer(text, reply_markup=admin_agency_menu(agents))
 
 
 @router.message(F.text == "🗂 دسته‌بندی‌های VIP")
 async def menu_admin_vip_categories(message: types.Message):
     if not _is_admin(message.from_user.id):
         return
-    await answer_rich(message, 
+    await message.answer(
         "🗂 دسته‌بندی‌های VIP\n\n"
         "این دسته‌ها همان چیزی هستند که کاربر موقع «خرید اشتراک → سرور VIP» می‌بیند.\n"
         "برای مدیریت پلن‌های داخل هر دسته، روی آن بزنید 👇",
@@ -523,18 +510,18 @@ async def menu_admin_orders_off(message: types.Message):
     db.set_orders_enabled(False)
     users = db.get_all_users()
     sent, failed = 0, 0
-    status_msg = await answer_rich(message, f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
+    status_msg = await message.answer(f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
     for u in users:
         try:
-            await send_rich(message.bot, 
+            await message.bot.send_message(
                 int(u["telegram_id"]),
                 db.get_text_override("orders_closed", "🔴 ربات به دلیل حجم سفارشات بالا موقتاً بسته می‌باشد.") + "\n\nروشن شدن دوباره‌ی آن اطلاع‌رسانی خواهد شد.",
             )
             sent += 1
         except Exception:
             failed += 1
-    await edit_rich(status_msg, f"🔴 بخش سفارشات خاموش شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
-    await answer_rich(message, "👨‍💻 پنل مدیریت:", reply_markup=_admin_reply_kb_for(message.from_user.id, False))
+    await status_msg.edit_text(f"🔴 بخش سفارشات خاموش شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
+    await message.answer("👨‍💻 پنل مدیریت:", reply_markup=_admin_reply_kb_for(message.from_user.id, False))
 
 
 @router.message(F.text == "🟢 روشن کردن سفارشات")
@@ -544,18 +531,18 @@ async def menu_admin_orders_on(message: types.Message):
     db.set_orders_enabled(True)
     users = db.get_all_users()
     sent, failed = 0, 0
-    status_msg = await answer_rich(message, f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
+    status_msg = await message.answer(f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
     for u in users:
         try:
-            await send_rich(message.bot, 
+            await message.bot.send_message(
                 int(u["telegram_id"]),
                 db.get_text_override("orders_opened", "🟢 ربات مجدداً فعال شد!") + "\n\nبا زدن /start می‌توانید دوباره سفارش ثبت کنید.",
             )
             sent += 1
         except Exception:
             failed += 1
-    await edit_rich(status_msg, f"🟢 بخش سفارشات روشن شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
-    await answer_rich(message, "👨‍💻 پنل مدیریت:", reply_markup=_admin_reply_kb_for(message.from_user.id, True))
+    await status_msg.edit_text(f"🟢 بخش سفارشات روشن شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
+    await message.answer("👨‍💻 پنل مدیریت:", reply_markup=_admin_reply_kb_for(message.from_user.id, True))
 
 
 def _error_logs_text(logs: list, total: int) -> str:
@@ -570,9 +557,9 @@ async def _open_error_logs(target, edit: bool = False):
     text = _error_logs_text(logs, total)
     kb = admin_error_logs_keyboard(logs)
     if edit:
-        await edit_rich(target.message, text, reply_markup=kb)
+        await target.message.edit_text(text, reply_markup=kb)
     else:
-        await answer_rich(target, text, reply_markup=kb)
+        await target.answer(text, reply_markup=kb)
 
 
 @router.message(F.text == "🦖 لاگ خطاها")
@@ -615,13 +602,13 @@ async def admin_error_log_detail(callback: types.CallbackQuery):
     tb = html.escape(str(log.get("traceback") or "")[:max_tb_len])
     text = f"{header}<pre>{tb}</pre>"
     try:
-        await edit_rich(callback.message, text, reply_markup=admin_error_log_detail_keyboard())
+        await callback.message.edit_text(text, reply_markup=admin_error_log_detail_keyboard())
     except TelegramBadRequest as e:
         if is_message_too_long_error(e):
             fallback_text = truncate_for_telegram(
                 f"⚠️ {error_type_display}\n🕐 {occurred_at_display}\n\n📝 {message_display}"
             )
-            await edit_rich(callback.message, fallback_text, reply_markup=admin_error_log_detail_keyboard())
+            await callback.message.edit_text(fallback_text, reply_markup=admin_error_log_detail_keyboard())
         else:
             raise
     await callback.answer()
@@ -632,7 +619,7 @@ async def admin_error_logs_clear_ask(callback: types.CallbackQuery):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "🗑 مطمئنید می‌خواهید همه‌ی لاگ ها پاک شوند؟", reply_markup=admin_error_logs_clear_confirm_keyboard(),
     )
     await callback.answer()
@@ -666,7 +653,7 @@ async def admin_stats(callback: types.CallbackQuery):
         f"👥 تعداد کاربران: {db.count_users()}\n"
         f"🟢 کاربران فعال (۳۰ روز اخیر): {db.count_active_users(30)}"
     )
-    await edit_rich(callback.message, text, reply_markup=admin_back_button())
+    await callback.message.edit_text(text, reply_markup=admin_back_button())
     await callback.answer()
 
 
@@ -686,7 +673,7 @@ async def admin_user_list(callback: types.CallbackQuery):
         f"👤 کاربران بدون خرید: {db.count_non_customers()}\n\n"
         f"یکی از گزینه‌های زیر را انتخاب کنید 👇"
     )
-    await edit_rich(callback.message, text, reply_markup=admin_userlist_menu())
+    await callback.message.edit_text(text, reply_markup=admin_userlist_menu())
     await callback.answer()
 
 
@@ -709,7 +696,7 @@ async def _render_userlist_page(callback: types.CallbackQuery, list_kind: str, p
         text = f"{title} — {total} نفر (مرتب‌شده بر اساس بیشترین خرید)\nنمایش {start} تا {start + len(users) - 1}:\n\n"
         text += "برای مدیریت هرکدام روی نامش بزن 👇"
 
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         text, reply_markup=admin_userlist_page_keyboard(users, page, has_next, list_kind)
     )
     await callback.answer()
@@ -820,7 +807,7 @@ async def admin_user_accounting(callback: types.CallbackQuery):
                 f"🕐 {tx['created_at']}\n\n"
             )
 
-    await edit_rich(callback.message, text, reply_markup=admin_accounting_keyboard(uid, page, has_next))
+    await callback.message.edit_text(text, reply_markup=admin_accounting_keyboard(uid, page, has_next))
     await callback.answer()
 
 
@@ -832,66 +819,20 @@ async def admin_search_start(callback: types.CallbackQuery, state: FSMContext):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "🔍 آیدی عددی یا کد دعوت کاربر را ارسال کنید:", reply_markup=admin_back_button()
     )
     await state.set_state(AdminStates.waiting_search_user)
     await callback.answer()
 
 
-@router.message(F.text == "🔎 جستجوی کانفیگ")
-async def menu_admin_config_search(message: types.Message, state: FSMContext):
-    if not _admin_perm(message.from_user.id, "users"):
-        return
-    await message.answer(
-        "🔎 بخشی از اسم سرویس را ارسال کنید تا بین سرویس‌های همه کاربران جستجو کنم.\n\nمثلاً: `520120` یا `Config`",
-        reply_markup=admin_back_button(),
-        parse_mode="Markdown",
-    )
-    await state.set_state(AdminStates.waiting_search_config)
-
-
 @router.message(AdminStates.waiting_search_user)
 async def admin_search_result(message: types.Message, state: FSMContext):
     query = clean_numeric_id(message.text)
 
-    # جستجوی آیدی عددی به‌صورت حرفه‌ای: اگر فقط بخشی از آیدی وارد شود،
-    # همهٔ کاربران منطبق برگردانده می‌شوند و هر کاربر یک دکمهٔ شیشه‌ای
-    # با نام خودش دارد. با زدن دکمه، همان useropen_ قبلی صفحهٔ مدیریت کاربر را باز می‌کند.
-    if query.isdigit():
-        matches = db.search_users_by_telegram_id_fragment(query, limit=50)
-        if not matches:
-            await answer_rich(
-                message,
-                f"❌ هیچ کاربری با بخشی از آیدی عددی «{query}» پیدا نشد.",
-                reply_markup=admin_back_button(),
-            )
-            return
-
-        buttons = []
-        for user in matches:
-            name = str(user.get("name") or "کاربر").strip() or "کاربر"
-            buttons.append([
-                InlineKeyboardButton(
-                    text=name,
-                    callback_data=f"useropen_{user['telegram_id']}",
-                    style="primary",
-                )
-            ])
-        buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_back", style="primary")])
-        kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-        await answer_rich(
-            message,
-            f"🔍 نتیجه جستجوی آیدی «{query}»\n\n👥 {len(matches)} کاربر پیدا شد.\nبرای مدیریت کاربر روی نامش بزن 👇",
-            reply_markup=kb,
-        )
-        await state.clear()
-        return
-
-    # کد دعوت همچنان به‌صورت تک‌کاربره کار می‌کند.
-    user = db.get_user_by_invite_code(query)
+    user = db.get_user(query) if query.isdigit() else db.get_user_by_invite_code(query)
     if user is None:
-        await answer_rich(message, "❌ کاربری با این مشخصات یافت نشد.", reply_markup=admin_back_button())
+        await message.answer("❌ کاربری با این مشخصات یافت نشد.", reply_markup=admin_back_button())
         return
 
     stats = db.get_referral_stats(user["id"])
@@ -908,73 +849,6 @@ async def admin_search_result(message: types.Message, state: FSMContext):
     await _reply_with_user_actions(
         message, text, user["telegram_id"], db.is_user_blocked(user["telegram_id"]), edit=False
     )
-    await state.clear()
-
-
-# ---------------------------------------------------------------------------
-# 🔎 جستجوی کانفیگ/سرویس در کل کاربران
-# ---------------------------------------------------------------------------
-@router.callback_query(F.data == "admin_config_search")
-async def admin_config_search_start(callback: types.CallbackQuery, state: FSMContext):
-    if not _admin_perm(callback.from_user.id, "users"):
-        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
-        return
-    await edit_rich(callback.message,
-        "🔎 بخشی از اسم سرویس را ارسال کنید تا بین سرویس‌های همه کاربران جستجو کنم.\n\nمثلاً: `520120` یا `Config`",
-        reply_markup=admin_back_button(),
-        parse_mode="Markdown",
-    )
-    await state.set_state(AdminStates.waiting_search_config)
-    await callback.answer()
-
-
-@router.message(AdminStates.waiting_search_config)
-async def admin_config_search_result(message: types.Message, state: FSMContext):
-    if not _admin_perm(message.from_user.id, "users"):
-        return
-    query = (message.text or "").strip()
-    if not query:
-        await answer_rich(message, "❌ لطفاً بخشی از نام سرویس را وارد کنید.", reply_markup=admin_back_button())
-        return
-
-    configs = db.get_all_configs(include_deleted=True)
-    await enrich_configs_with_subscription_names(configs)
-    tokens = [x.casefold() for x in query.split() if x.strip()]
-    if not tokens:
-        tokens = [query.casefold()]
-    matches = []
-    for cfg in configs:
-        display_name = str(cfg.get("_display_name") or cfg.get("plan") or "سرویس")
-        plan_name = str(cfg.get("plan") or "")
-        service_id = str(cfg.get("service_id") or "")
-        owner = db.get_user_by_id(cfg.get("user_id")) or {}
-        owner_name = str(owner.get("name") or "")
-        haystack = " ".join((display_name, plan_name, service_id, owner_name)).casefold()
-        # چند رقم/بخش جداگانه هم‌زمان قابل جست‌وجوست؛ مثلاً «43 05» هر سرویس
-        # دارای هر دو قطعه را برمی‌گرداند، و نتیجه مثل قبل نام پروفایل صاحب سرویس را نشان می‌دهد.
-        if all(token in haystack for token in tokens):
-            matches.append(cfg)
-
-    if not matches:
-        await answer_rich(message, f"🔎 برای «{query}» هیچ سرویسی پیدا نشد.", reply_markup=admin_back_button())
-        return
-
-    # هر سرویس با نام واقعی استخراج‌شده از Subscription و نام صاحبش نمایش داده می‌شود.
-    buttons = []
-    for cfg in matches[:50]:
-        owner = db.get_user_by_id(cfg.get("user_id"))
-        owner_name = (owner or {}).get("name") or (owner or {}).get("telegram_id") or "کاربر"
-        icon = "🚀" if cfg.get("type", "vip") == "vip" else "🎮"
-        mark = "❌ " if cfg.get("deleted") else ""
-        display_name = cfg.get("_display_name") or cfg.get("plan") or "سرویس"
-        buttons.append([InlineKeyboardButton(
-            text=f"{mark}👤 {owner_name} | {icon} {display_name}",
-            callback_data=f"svcdetail_{cfg['id']}", style="primary"
-        )])
-    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_back", style="primary")])
-    kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    suffix = f"\n\nنمایش {min(len(matches), 50)} مورد از {len(matches)} نتیجه." if len(matches) > 50 else ""
-    await answer_rich(message, f"🔎 {len(matches)} سرویس برای «{query}» پیدا شد:{suffix}\n\n👇 برای مشاهده جزئیات انتخاب کنید.", reply_markup=kb)
     await state.clear()
 
 
@@ -1011,7 +885,7 @@ async def approve_charge(callback: types.CallbackQuery):
     )
     try:
         await send_notification_sticker(callback.bot, int(uid), "notif_wallet_charge")
-        await send_rich(callback.bot, int(uid), user_text("notif_wallet_charge_approved", amount=amount))
+        await callback.bot.send_message(int(uid), user_text("notif_wallet_charge_approved", amount=amount))
     except Exception:
         pass
     await _notify_main_admin_action(callback.bot, callback.from_user, "تأیید رسید شارژ کیف پول", uid, f"مبلغ {amount:,} تومان")
@@ -1039,7 +913,7 @@ async def reject_charge(callback: types.CallbackQuery):
     )
     try:
         await send_notification_sticker(callback.bot, int(uid), "notif_receipt_rejected")
-        await send_rich(callback.bot, int(uid), user_text("notif_receipt_rejected_short"))
+        await callback.bot.send_message(int(uid), user_text("notif_receipt_rejected_short"))
     except Exception:
         pass
     await _notify_main_admin_action(callback.bot, callback.from_user, "رد رسید", uid if 'uid' in locals() else str(order_id) if 'order_id' in locals() else "", "")
@@ -1055,14 +929,14 @@ async def custom_charge_start(callback: types.CallbackQuery, state: FSMContext):
     uid = callback.data.replace("custom_", "")
     await state.update_data(charge_target=uid)
     await state.set_state(AdminStates.waiting_custom_amount)
-    await answer_rich(callback.message, f"💵 مبلغ شارژ برای کاربر {uid} را به تومان ارسال کنید:")
+    await callback.message.answer(f"💵 مبلغ شارژ برای کاربر {uid} را به تومان ارسال کنید:")
     await callback.answer()
 
 
 @router.message(AdminStates.waiting_custom_amount)
 async def custom_charge_apply(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید.")
+        await message.answer("❌ فقط عدد ارسال کنید.")
         return
 
     data = await state.get_data()
@@ -1071,7 +945,7 @@ async def custom_charge_apply(message: types.Message, state: FSMContext):
 
     user = db.get_user(uid)
     if user is None:
-        await answer_rich(message, "❌ کاربر یافت نشد.")
+        await message.answer("❌ کاربر یافت نشد.")
         await state.clear()
         return
 
@@ -1080,10 +954,10 @@ async def custom_charge_apply(message: types.Message, state: FSMContext):
         db.resolve_pending_receipt("charge", uid)
     except Exception:
         pass
-    await answer_rich(message, f"✅ {amount:,} تومان به کیف پول کاربر {uid} اضافه شد.")
+    await message.answer(f"✅ {amount:,} تومان به کیف پول کاربر {uid} اضافه شد.")
     try:
         await send_notification_sticker(message.bot, int(uid), "notif_wallet_charge")
-        await send_rich(message.bot, int(uid), user_text("notif_wallet_charged", amount=amount))
+        await message.bot.send_message(int(uid), user_text("notif_wallet_charged", amount=amount))
     except Exception:
         pass
     await state.clear()
@@ -1158,10 +1032,10 @@ async def approve_purchase(callback: types.CallbackQuery):
         if pending and pending.get("discount_code"):
             _confirm_text += f"\n🎟 کد تخفیف {pending['discount_code']} برای این خرید مصرف شد."
         await send_notification_sticker(callback.bot, int(uid), "notif_purchase_approved")
-        await send_rich(callback.bot, int(uid), _confirm_text)
+        await callback.bot.send_message(int(uid), _confirm_text)
     except Exception:
         pass
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         "📤 برای ارسال کانفیگ این خرید:", reply_markup=admin_purchase_notify_keyboard(uid, plan_key, order_id)
     )
     await _notify_main_admin_action(callback.bot, callback.from_user, "تأیید خرید/سفارش", uid if 'uid' in locals() else str(order_id) if 'order_id' in locals() else "", "ثبت شد")
@@ -1189,7 +1063,7 @@ async def reject_purchase(callback: types.CallbackQuery):
     )
     try:
         await send_notification_sticker(callback.bot, int(uid), "notif_receipt_rejected")
-        await send_rich(callback.bot, int(uid), user_text("notif_receipt_rejected"))
+        await callback.bot.send_message(int(uid), user_text("notif_receipt_rejected"))
     except Exception:
         pass
     await _notify_main_admin_action(callback.bot, callback.from_user, "رد رسید", uid if 'uid' in locals() else str(order_id) if 'order_id' in locals() else "", "")
@@ -1218,7 +1092,7 @@ async def _log_fulfilled_order(
             amount_text = f"{order['price']:,} تومان" if order["price"] else "رایگان"
             if order.get("order_type") == "test":
                 label = "🎁 تست رایگان"
-            elif order.get("order_type") == "renew":
+            elif target_config_id:
                 label = "🔁 تمدید سرویس"
             else:
                 label = "🛒 خرید جدید"
@@ -1245,245 +1119,6 @@ async def _log_fulfilled_order(
 
 
 # ---------------------------------------------------------------------------
-# 🔁 تأیید/رد تمدید کارت‌به‌کارت یا ارزی
-# ---------------------------------------------------------------------------
-def _renewal_confirmation_values(panel_data: dict | None, added_volume: float, added_days: int, fallback_expiry=None) -> dict:
-    """باقی‌مانده واقعی قبل از تمدید، مقدار تمدید و باقی‌مانده جدید را محاسبه می‌کند."""
-    import math, time
-    data = panel_data or {}
-
-    # total در پنل «حجم کل» است، نه حجم باقی‌مانده؛ بنابراین برای نمایش
-    # نتیجه تمدید باید used را کم کنیم تا باقی‌مانده واقعی به دست بیاید.
-    total = data.get("total")
-    used = data.get("used", 0)
-    if total is not None:
-        try:
-            total_bytes = float(total)
-            used_bytes = float(used or 0)
-            remaining_bytes = max(0.0, total_bytes - used_bytes)
-            remaining_gb = remaining_bytes / (1024 ** 3)
-            if total_bytes <= 0:
-                previous_volume = new_volume = "نامحدود"
-            elif added_volume:
-                previous_gb = max(0.0, remaining_gb - float(added_volume))
-                previous_volume = f"{previous_gb:g} گیگ"
-                new_volume = f"{remaining_gb:g} گیگ"
-            else:
-                previous_volume = new_volume = f"{remaining_gb:g} گیگ"
-        except Exception:
-            previous_volume = new_volume = "نامشخص"
-    else:
-        previous_volume = new_volume = "بدون تغییر" if not added_volume else "نامشخص"
-
-    expire = data.get("expire") if "expire" in data else fallback_expiry
-    if expire is None or str(expire).strip().lower() in ("", "none"):
-        expire = fallback_expiry
-    if str(expire).strip() in ("0", "0.0"):
-        previous_days = new_days_text = "نامحدود"
-    elif expire:
-        try:
-            # پنل‌ها ممکن است timestamp ثانیه/میلی‌ثانیه یا تاریخ ISO برگردانند.
-            if isinstance(expire, (int, float)) or str(expire).strip().replace(".", "", 1).isdigit():
-                exp_value = float(expire)
-                if exp_value > 100000000000:
-                    exp_value /= 1000.0
-                new_days = max(0, int(math.ceil((exp_value - time.time()) / 86400)))
-            else:
-                from datetime import datetime, date
-                from zoneinfo import ZoneInfo
-                raw_expire = str(expire).strip().replace("Z", "+00:00")
-                try:
-                    exp_dt = datetime.fromisoformat(raw_expire)
-                except ValueError:
-                    exp_dt = datetime.strptime(raw_expire[:10], "%Y-%m-%d")
-                if exp_dt.tzinfo is None:
-                    exp_dt = exp_dt.replace(tzinfo=ZoneInfo("Asia/Tehran"))
-                new_days = max(0, int(math.ceil((exp_dt.timestamp() - time.time()) / 86400)))
-            if added_days:
-                previous_days = f"{max(0, new_days - int(added_days))} روز"
-                new_days_text = f"{new_days} روز"
-            else:
-                previous_days = new_days_text = f"{new_days} روز"
-        except Exception:
-            previous_days = new_days_text = "نامشخص"
-    else:
-        previous_days = new_days_text = "نامحدود"
-
-    return {
-        "added_volume": f"+{float(added_volume):g} گیگ" if added_volume else "بدون تغییر",
-        "previous_volume": previous_volume,
-        "new_volume": new_volume,
-        "added_days": f"+{int(added_days)} روز" if added_days else "بدون تغییر",
-        "previous_days": previous_days,
-        "new_days": new_days_text,
-        "volume": f"{float(added_volume):g} گیگ" if added_volume else "بدون تغییر",
-        "days": f"{int(added_days)} روز" if added_days else "بدون تغییر",
-    }
-
-
-def _renewal_confirmation_details(panel_data: dict | None, added_volume: float, added_days: int, fallback_expiry=None) -> str:
-    """جزئیات تمدید را بر اساس نوع تمدید، از متن مستقل همان حالت نمایش می‌دهد."""
-    values = _renewal_confirmation_values(panel_data, added_volume, added_days, fallback_expiry=fallback_expiry)
-    if added_volume and added_days:
-        detail = user_text(
-            "renew_volume_days_detail",
-            previous_volume=values["previous_volume"],
-            added_volume=values["added_volume"],
-            new_volume=values["new_volume"],
-            previous_days=values["previous_days"],
-            added_days=values["added_days"],
-            new_days=values["new_days"],
-        )
-    elif added_volume:
-        detail = user_text(
-            "renew_volume_only_detail",
-            previous_volume=values["previous_volume"],
-            added_volume=values["added_volume"],
-            new_volume=values["new_volume"],
-        )
-    elif added_days:
-        detail = user_text(
-            "renew_days_only_detail",
-            previous_days=values["previous_days"],
-            added_days=values["added_days"],
-            new_days=values["new_days"],
-        )
-    else:
-        return user_text("renew_details_empty")
-    return user_text("renew_details_title") + "\n\n" + detail
-
-
-async def _apply_admin_renewal(receipt):
-    try:
-        payload=json.loads(receipt.get("extra") or "{}")
-    except Exception:
-        payload={}
-    uid=str(receipt.get("telegram_id")); user=db.get_user(uid)
-    cfg_id=payload.get("cfg_id")
-    cfg=db.get_config_by_id(int(cfg_id)) if cfg_id else None
-    if not user or not cfg or cfg.get("user_id") != user.get("id") or not cfg.get("service_id"):
-        return False, "سرویس تمدیدی دیگر پیدا نشد."
-    volume=float(payload.get("volume_gb") or 0); days=int(payload.get("days") or 0)
-    panel = db.get_vpn_panel(cfg.get("panel_id")) if cfg.get("panel_id") else None
-    if not panel:
-        return False, "پنل این سرویس پیدا نشد."
-    ok, panel_data, msg = await panels.renew_existing_service(
-        panel, cfg["service_id"], volume, days
-    )
-    if not ok:
-        return False, msg
-    try:
-        exp = panel_data.get("expire") if isinstance(panel_data, dict) else None
-        if exp:
-            expiry = datetime.fromtimestamp(int(exp), tz=TEHRAN_TZ).replace(tzinfo=None).strftime("%Y-%m-%d")
-        elif isinstance(panel_data, dict) and "expire" in panel_data:
-            expiry = "نامحدود"
-        else:
-            expiry = cfg.get("expiry")
-    except Exception:
-        expiry = cfg.get("expiry")
-    db.update_config_expiry(cfg["id"], expiry)
-    return True,(volume,days,expiry,panel_data)
-
-@router.callback_query(F.data.startswith("approverenew|"))
-async def approve_renewal(callback: types.CallbackQuery):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
-    receipt_id=int(callback.data.split("|",1)[1])
-    if is_duplicate_action(f"approverenew_{receipt_id}") or not db.claim_admin_action(f"approverenew_{receipt_id}"):
-        await callback.answer("⚠️ این رسید قبلاً پردازش شده.",show_alert=True); return
-    receipt=db.get_pending_receipt_by_id(receipt_id)
-    if not receipt: await callback.answer("⚠️ رسید پیدا نشد.",show_alert=True); return
-    ok,result=await _apply_admin_renewal(receipt)
-    if not ok: await answer_rich(callback.message,f"❌ تمدید انجام نشد: {result}"); await callback.answer("❌ ناموفق",show_alert=True); return
-    volume,days,_,panel_data=result; db.resolve_pending_receipt_by_id(receipt_id)
-    try:
-        payload=json.loads(receipt.get("extra") or "{}")
-    except Exception:
-        payload={}
-    cfg=db.get_config_by_id(payload.get("cfg_id")) if payload.get("cfg_id") else None
-    service_username=alerts.get_config_service_username(cfg or {}, panel_data)
-    package_name=alerts.get_config_package_name(cfg or {})
-    await _finish_receipt_message(callback.message,"\n\nتمدید تأیید و روی پنل اعمال شد.",queue_refresh=lambda:_render_pending_receipts(callback))
-    try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("renew_done",service_name=service_username,details=_renewal_confirmation_details(panel_data, volume, days, fallback_expiry=cfg.get("expiry") if cfg else None)))
-    except Exception: pass
-    try:
-        renew_user=db.get_user(receipt["telegram_id"]) or {}
-        await alerts.log_renewal_to_channel(callback.bot, renew_user, cfg or {}, panel_data, int(receipt.get("amount") or 0), volume, days)
-    except Exception:
-        logger.exception("ثبت لاگ تمدید کارت‌به‌کارت در کانال ناموفق بود")
-    try:
-        await send_rich(callback.bot,ADMIN_ID,alerts.admin_delivery_summary(renew_user,service_username,package_name,int(receipt.get("amount") or 0)))
-    except Exception:
-        logger.exception("ارسال خلاصه تأیید تمدید برای ادمین ناموفق بود")
-    await callback.answer("✅ تمدید شد.")
-
-@router.callback_query(F.data.startswith("rejectrenew|"))
-async def reject_renewal(callback: types.CallbackQuery):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
-    receipt_id=int(callback.data.split("|",1)[1])
-    if is_duplicate_action(f"rejectrenew_{receipt_id}") or not db.claim_admin_action(f"rejectrenew_{receipt_id}"):
-        await callback.answer("⚠️ این رسید قبلاً پردازش شده.",show_alert=True); return
-    receipt=db.get_pending_receipt_by_id(receipt_id)
-    if receipt:
-        db.resolve_pending_receipt_by_id(receipt_id)
-        await _finish_receipt_message(callback.message,"\n\n❌ رد شد.",queue_refresh=lambda:_render_pending_receipts(callback))
-        try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("notif_receipt_rejected"))
-        except Exception: pass
-    await callback.answer("❌ رد شد.")
-
-@router.callback_query(F.data.startswith("rejectcrypto|"))
-async def reject_crypto_payment(callback: types.CallbackQuery):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
-    receipt_id=int(callback.data.split("|",1)[1]); receipt=db.get_pending_receipt_by_id(receipt_id)
-    if receipt:
-        db.resolve_pending_receipt_by_id(receipt_id)
-        await _finish_receipt_message(callback.message,"\n\n❌ پرداخت ارزی رد شد.",queue_refresh=lambda:_render_pending_receipts(callback))
-        try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("notif_receipt_rejected"))
-        except Exception: pass
-    await callback.answer("❌ رد شد.")
-
-@router.callback_query(F.data.startswith("approvecrypto|"))
-async def approve_crypto_payment(callback: types.CallbackQuery):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.",show_alert=True); return
-    receipt_id=int(callback.data.split("|",1)[1]); receipt=db.get_pending_receipt_by_id(receipt_id)
-    if not receipt: await callback.answer("⚠️ رسید پیدا نشد.",show_alert=True); return
-    if is_duplicate_action(f"approvecrypto_{receipt_id}") or not db.claim_admin_action(f"approvecrypto_{receipt_id}"):
-        await callback.answer("⚠️ این رسید قبلاً پردازش شده.",show_alert=True); return
-    try: payload=json.loads(receipt.get("extra") or "{}")
-    except Exception: payload={}
-    if receipt.get("kind")=="crypto_renew":
-        ok,result=await _apply_admin_renewal(receipt)
-        if not ok: await answer_rich(callback.message,f"❌ تمدید انجام نشد: {result}"); await callback.answer("❌ ناموفق",show_alert=True); return
-        volume,days,_,panel_data=result; db.resolve_pending_receipt_by_id(receipt_id)
-        cfg=db.get_config_by_id(payload.get("cfg_id")) if payload.get("cfg_id") else None
-        service_username=alerts.get_config_service_username(cfg or {}, panel_data)
-        package_name=alerts.get_config_package_name(cfg or {})
-        try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("renew_done",service_name=service_username,details=_renewal_confirmation_details(panel_data, volume, days, fallback_expiry=cfg.get("expiry") if cfg else None)))
-        except Exception: pass
-        try:
-            renew_user=db.get_user(receipt["telegram_id"]) or {}
-            await alerts.log_renewal_to_channel(callback.bot, renew_user, cfg or {}, panel_data, int(receipt.get("amount") or 0), volume, days)
-        except Exception:
-            logger.exception("ثبت لاگ تمدید ارزی در کانال ناموفق بود")
-        try:
-            await send_rich(callback.bot,ADMIN_ID,alerts.admin_delivery_summary(renew_user,service_username,package_name,int(receipt.get("amount") or 0)))
-        except Exception:
-            logger.exception("ارسال خلاصه تأیید تمدید ارزی برای ادمین ناموفق بود")
-        await _finish_receipt_message(callback.message,"\n\nپرداخت ارزی تأیید و تمدید انجام شد.",queue_refresh=lambda:_render_pending_receipts(callback)); await callback.answer("تمدید شد"); return
-    plan_key=payload.get("plan_key") or receipt.get("plan_key"); plan=db.get_effective_plan(plan_key); user=db.get_user(receipt["telegram_id"])
-    if not plan or not user: await callback.answer("❌ پلن/کاربر پیدا نشد.",show_alert=True); return
-    price=int(receipt["amount"]); db.record_purchase(user["id"],price,f"خرید {plan['name']} (ارزی)")
-    if payload.get("discount_code"):
-        try: db.use_discount(payload["discount_code"], user["id"])
-        except Exception: logger.exception("مصرف کد تخفیف پرداخت ارزی ناموفق بود")
-    order_id=db.create_order(user["id"],plan_key,plan["name"],plan_type(plan_key),price)
-    db.resolve_pending_receipt_by_id(receipt_id)
-    await _finish_receipt_message(callback.message,"\n\n✅ پرداخت ارزی تأیید شد و خرید ثبت شد.",queue_refresh=lambda:_render_pending_receipts(callback))
-    try: await send_rich(callback.bot,int(receipt["telegram_id"]),user_text("notif_purchase_approved",plan_name=plan["name"],discount_note=""))
-    except Exception: pass
-    await answer_rich(callback.message,"📤 برای ارسال کانفیگ این خرید:",reply_markup=admin_purchase_notify_keyboard(receipt["telegram_id"],plan_key,order_id)); await callback.answer("✅ خرید ثبت شد.")
-
-# ---------------------------------------------------------------------------
 # 🛒 خرید اشتراک برای خود ادمین
 # ---------------------------------------------------------------------------
 @router.callback_query(F.data == "admin_buy_subscription")
@@ -1499,7 +1134,7 @@ async def admin_buy_subscription(callback: types.CallbackQuery, state: FSMContex
     if db.get_user(callback.from_user.id) is None:
         db.create_user(callback.from_user.id, callback.from_user.full_name or "Admin")
 
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         "🛒 خرید اشتراک برای خودم\n\n🚀 دسته‌بندی سرویس مورد نظر را انتخاب کنید 👇",
         reply_markup=vip_categories_keyboard(),
     )
@@ -1511,12 +1146,12 @@ async def admin_buy_subscription_reply(message: types.Message, state: FSMContext
     if not _is_admin(message.from_user.id):
         return
     if not db.is_orders_enabled():
-        await answer_rich(message, "🔴 سفارشات در حال حاضر خاموش است.")
+        await message.answer("🔴 سفارشات در حال حاضر خاموش است.")
         return
     await state.clear()
     if db.get_user(message.from_user.id) is None:
         db.create_user(message.from_user.id, message.from_user.full_name or "Admin")
-    await answer_rich(message, 
+    await message.answer(
         "🛒 خرید اشتراک برای خودم\n\n🚀 دسته‌بندی سرویس مورد نظر را انتخاب کنید 👇",
         reply_markup=vip_categories_keyboard(),
     )
@@ -1538,7 +1173,7 @@ async def _start_send_flow(callback: types.CallbackQuery, state: FSMContext, uid
         qr_file_id=None,
     )
     await state.set_state(AdminStates.waiting_send_qr_photo)
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"📤 ارسال کانفیگ برای کاربر {uid}{hint}\n\n📸 اول عکس کیوآرکد سرویس رو ارسال کن:"
     )
     await callback.answer()
@@ -1564,26 +1199,26 @@ async def send_config_qr_received(message: types.Message, state: FSMContext):
     file_id = message.photo[-1].file_id
     await state.update_data(qr_file_id=file_id)
     await state.set_state(AdminStates.waiting_send_qr_link)
-    await answer_rich(message, "🔗 حالا لینک ساب (Subscription) این سرویس رو ارسال کن:")
+    await message.answer("🔗 حالا لینک ساب (Subscription) این سرویس رو ارسال کن:")
 
 
 @router.message(AdminStates.waiting_send_qr_photo)
 async def send_config_qr_wrong_format(message: types.Message):
-    await answer_rich(message, "📸 لطفاً عکس کیوآرکد سرویس رو ارسال کن (نه متن).")
+    await message.answer("📸 لطفاً عکس کیوآرکد سرویس رو ارسال کن (نه متن).")
 
 
 @router.message(AdminStates.waiting_send_qr_link)
 async def send_config_link_received(message: types.Message, state: FSMContext):
     sub_link = (message.text or "").strip()
     if not sub_link.lower().startswith(("http://", "https://")):
-        await answer_rich(message, "❌ این یک لینک معتبر نیست؛ لطفاً لینک ساب رو با http یا https ارسال کن:")
+        await message.answer("❌ این یک لینک معتبر نیست؛ لطفاً لینک ساب رو با http یا https ارسال کن:")
         return
 
     data = await state.get_data()
     order_id = data.get("send_order_id")
     order = db.get_custom_order(order_id) if order_id else None
 
-    await answer_rich(message, "⏳ در حال تشخیص خودکار اطلاعات از روی لینک...")
+    await message.answer("⏳ در حال تشخیص خودکار اطلاعات از روی لینک...")
     meta = await extract_meta(sub_link)
     userinfo = (meta or {}).get("userinfo") or {}
     fetched_name = (meta or {}).get("name")
@@ -1621,7 +1256,7 @@ async def send_config_link_received(message: types.Message, state: FSMContext):
     if days is not None:
         known.append(f"مدت: {days} روز")
     known_text = ("\n✅ همین مقدار از روی لینک تشخیص داده شد: " + " | ".join(known)) if known else ""
-    await answer_rich(message, 
+    await message.answer(
         "⚠️ تشخیص خودکار کامل از روی این لینک ممکن نشد (احتمالاً این پنل هدر استاندارد ساب رو برنمی‌گردونه)."
         + known_text
         + "\n\nلطفاً این ۳ مورد رو هرکدام در یک خط، به همین ترتیب بفرست:\n"
@@ -1633,14 +1268,14 @@ async def send_config_link_received(message: types.Message, state: FSMContext):
 async def send_config_manual_input(message: types.Message, state: FSMContext):
     lines = [l.strip() for l in (message.text or "").splitlines() if l.strip()]
     if len(lines) < 3:
-        await answer_rich(message, "❌ باید دقیقاً ۳ خط بفرستی: نام / حجم (گیگ) / مدت (روز). دوباره امتحان کن:")
+        await message.answer("❌ باید دقیقاً ۳ خط بفرستی: نام / حجم (گیگ) / مدت (روز). دوباره امتحان کن:")
         return
 
     name = lines[0]
     volume_gb = parse_int_in_range(lines[1], 0, 100000)
     days = parse_int_in_range(lines[2], 0, 100000)
     if volume_gb is None or days is None:
-        await answer_rich(message, "❌ خط دوم و سوم باید عدد ۰ یا بیشتر باشند (۰ = نامحدود). دوباره امتحان کن:")
+        await message.answer("❌ خط دوم و سوم باید عدد ۰ یا بیشتر باشند (۰ = نامحدود). دوباره امتحان کن:")
         return
 
     await state.update_data(send_name=name, send_volume_gb=volume_gb, send_days=days)
@@ -1670,7 +1305,7 @@ async def _finalize_send(message: types.Message, state: FSMContext):
 
     user = db.get_user(uid)
     if user is None or qr_file_id is None or sub_link is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد؛ لطفاً از ابتدا (📸 عکس کیوآرکد) دوباره امتحان کن.")
+        await message.answer("❌ مشکلی پیش آمد؛ لطفاً از ابتدا (📸 عکس کیوآرکد) دوباره امتحان کن.")
         await state.clear()
         return
 
@@ -1696,7 +1331,15 @@ async def _finalize_send(message: types.Message, state: FSMContext):
     )
     is_test_delivery = bool(plan_order_id and plan_order and plan_order.get("plan_key") == FREE_TEST_PLAN_KEY)
     delivery_text_key = "service_delivery_test_text" if is_test_delivery else "service_delivery_text"
-    caption = user_text(delivery_text_key, service_label=_english_digits(delivery_label), link=sub_link)
+    admin_message = (
+        "مرسی از انتخاب شما 💗" if is_test_delivery else "ممنون از اعتماد شما 💗"
+    )
+    caption = user_text(
+        delivery_text_key,
+        service_label=_english_digits(delivery_label),
+        link=sub_link,
+        admin_message=admin_message,
+    )
 
     expiry_date = None
     if days is not None:
@@ -1706,16 +1349,9 @@ async def _finalize_send(message: types.Message, state: FSMContext):
     plan_name = f"{name} | {volume_text} | {days_text}"
 
     if target_config_id:
-        target_cfg = db.get_config_by_id(int(target_config_id))
-        db.update_config(target_config_id, plan_name, encrypted, expiry=expiry_date, qr_file_id=qr_file_id, panel_id=(target_cfg.get("panel_id") if target_cfg else None))
+        db.update_config(target_config_id, plan_name, encrypted, expiry=expiry_date, qr_file_id=qr_file_id)
     else:
-        manual_plan_key = plan_order.get("plan_key") if plan_order_id and plan_order else None
-        plan_for_category = db.get_vip_plan(manual_plan_key) if manual_plan_key else None
-        db.add_config(
-            user["id"], plan_name, encrypted, expiry=expiry_date, config_type="vip",
-            qr_file_id=qr_file_id, category_id=(plan_for_category or {}).get("category_id"),
-            plan_key=(plan_order.get("plan_key") if plan_order_id and plan_order else None),
-        )
+        db.add_config(user["id"], plan_name, encrypted, expiry=expiry_date, config_type="vip", qr_file_id=qr_file_id)
 
     if order_id:
         db.set_custom_order_status(order_id, "fulfilled")
@@ -1724,7 +1360,7 @@ async def _finalize_send(message: types.Message, state: FSMContext):
 
     try:
         await send_notification_sticker(message.bot, int(uid), "notif_service_delivery")
-        await send_photo_rich(message.bot, 
+        await message.bot.send_photo(
             int(uid),
             qr_file_id,
             caption=caption,
@@ -1732,11 +1368,11 @@ async def _finalize_send(message: types.Message, state: FSMContext):
         )
         # منوی پایینی دائمی کاربر نباید بعد از تحویل سرویس مخفی شود.
         db.set_keyboard_hidden(int(uid), False)
-        await send_rich(message.bot, int(uid), "⬇️ منوی اصلی شما همچنان در دسترس است.", reply_markup=main_reply_keyboard())
-        await answer_rich(message, "✅ کانفیگ برای کاربر ارسال شد.")
+        await message.bot.send_message(int(uid), "⬇️ منوی اصلی شما همچنان در دسترس است.", reply_markup=main_reply_keyboard())
+        await message.answer("✅ کانفیگ برای کاربر ارسال شد.")
         await _notify_main_admin_action(message.bot, message.from_user, "ارسال کانفیگ", uid, plan_name)
     except Exception as e:
-        await answer_rich(message, f"⚠️ سرویس ذخیره شد ولی ارسال پیام به کاربر ناموفق بود: {e}")
+        await message.answer(f"⚠️ سرویس ذخیره شد ولی ارسال پیام به کاربر ناموفق بود: {e}")
 
     await _log_fulfilled_order(
         message.bot, user, plan_order_id=plan_order_id, custom_order_id=order_id,
@@ -1780,15 +1416,8 @@ def _chunk2(items):
     return rows
 
 
-_TEXT_EDITOR_PAGE_SIZE = 30  # 15 ردیف دو ستونه؛ از ساخت کیبوردهای خیلی بلند جلوگیری می‌کند.
-
-def _text_manager_keyboard(category: str | None = None, page: int = 0):
-    """مدیریت متن‌ها با صفحه‌بندی.
-
-    تلگرام روی تعداد/ارتفاع کیبوردهای Inline محدودیت‌های عملی دارد؛ بنابراین
-    دسته‌های بزرگ مثل «📦 سرویس‌های من» دیگر ۸۶ دکمه را یک‌جا نمی‌سازند.
-    هر صفحه حداکثر ۳۰ مورد دارد و دکمه‌های قبل/بعد پایین لیست قرار می‌گیرند.
-    """
+def _text_manager_keyboard(category: str | None = None):
+    """مدیریت متن‌ها؛ در هر ردیف تا ۲ دکمه (🐛 فیکس: قبلاً ۳ دکمه در هر ردیف بود که روی صفحه‌کلید شلوغ و فشرده بود)."""
     buttons = []
     if category is None:
         categories = list(TEXT_CATEGORIES.keys())
@@ -1806,11 +1435,6 @@ def _text_manager_keyboard(category: str | None = None, page: int = 0):
         return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
     items = TEXT_CATEGORIES.get(category, [])
-    total_pages = max(1, (len(items) + _TEXT_EDITOR_PAGE_SIZE - 1) // _TEXT_EDITOR_PAGE_SIZE)
-    page = max(0, min(int(page), total_pages - 1))
-    start = page * _TEXT_EDITOR_PAGE_SIZE
-    page_items = items[start:start + _TEXT_EDITOR_PAGE_SIZE]
-
     delivery_labels = {
         "service_delivery_text": "✏️ تغییر متن تحویل سرویس (بسته‌ها)",
         "service_delivery_apps_button": "📱 دکمه لینک برنامه‌ها (بسته‌ها)",
@@ -1819,9 +1443,9 @@ def _text_manager_keyboard(category: str | None = None, page: int = 0):
         "service_delivery_test_apps_button": "📱 دکمه لینک برنامه‌ها (تست)",
         "service_delivery_test_connection_button": "🔧 دکمه اتصال کانفینگ (تست)",
     }
-    for i in range(0, len(page_items), 2):
+    for i in range(0, len(items), 2):
         row = []
-        for key, default in page_items[i:i + 2]:
+        for key, default in items[i:i + 2]:
             value = user_text(key, default).replace("\n", " ")[:22]
             label = delivery_labels.get(key, f"✏️ {key[:14]} | {value}")
             if key in delivery_labels:
@@ -1832,28 +1456,6 @@ def _text_manager_keyboard(category: str | None = None, page: int = 0):
                 style="primary",
             ))
         buttons.append(row)
-
-    if total_pages > 1:
-        nav = []
-        if page > 0:
-            nav.append(InlineKeyboardButton(
-                text="⬅️ صفحه قبل",
-                callback_data=f"textcatpage_{list(TEXT_CATEGORIES.keys()).index(category)}_{page - 1}",
-                style="primary",
-            ))
-        nav.append(InlineKeyboardButton(
-            text=f"📄 {page + 1}/{total_pages}",
-            callback_data="noop",
-            style="primary",
-        ))
-        if page < total_pages - 1:
-            nav.append(InlineKeyboardButton(
-                text="➡️ صفحه بعد",
-                callback_data=f"textcatpage_{list(TEXT_CATEGORIES.keys()).index(category)}_{page + 1}",
-                style="primary",
-            ))
-        buttons.append(nav)
-
     buttons.append([InlineKeyboardButton(text="🔙 بازگشت به دسته‌ها", callback_data="admin_texts", style="primary")])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -1863,31 +1465,9 @@ async def admin_texts(callback: types.CallbackQuery, state: FSMContext):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
     await state.clear()
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "📝 مدیریت جامع متن‌های کاربر و اعلان‌ها\n\nیک بخش را انتخاب کنید:",
         reply_markup=_text_manager_keyboard(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("textcatpage_"))
-async def admin_text_category_page(callback: types.CallbackQuery, state: FSMContext):
-    """جابجایی بین صفحات یک دسته‌ی بزرگ در ویرایشگر متن."""
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
-    try:
-        _, index_raw, page_raw = callback.data.split("_", 2)
-        index = int(index_raw)
-        page = int(page_raw)
-        category = list(TEXT_CATEGORIES.keys())[index]
-    except Exception:
-        await callback.answer("❌ صفحه‌ی متن پیدا نشد.", show_alert=True); return
-    await state.clear()
-    note = "\n\n🔒 متن انقضای فاکتور کارت‌به‌کارت سیستمی است و از اینجا قابل تغییر نیست." if "فاکتور کارت‌به‌کارت" in category else ""
-    await edit_rich(
-        callback.message,
-        f"📝 {category}\n\nمتن موردنظر را برای ویرایش انتخاب کنید:{note}",
-        reply_markup=_text_manager_keyboard(category, page=page),
     )
     await callback.answer()
 
@@ -1903,9 +1483,9 @@ async def admin_text_category(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("❌ بخش متن پیدا نشد.", show_alert=True); return
     await state.clear()
     note = "\n\n🔒 متن انقضای فاکتور کارت‌به‌کارت سیستمی است و از اینجا قابل تغییر نیست." if "فاکتور کارت‌به‌کارت" in category else ""
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         f"📝 {category}\n\nمتن موردنظر را برای ویرایش انتخاب کنید:{note}",
-        reply_markup=_text_manager_keyboard(category, page=0),
+        reply_markup=_text_manager_keyboard(category),
     )
     await callback.answer()
 
@@ -1922,7 +1502,7 @@ async def admin_text_edit_start(callback: types.CallbackQuery, state: FSMContext
     current = user_text(key, TEXT_KEYS[key])
     placeholder_note = "\n\nمتغیرهای قابل استفاده: " + ", ".join("{" + x + "}" for x in _template_vars(TEXT_KEYS[key])) if _template_vars(TEXT_KEYS[key]) else ""
     lock_note = "\n\n🔒 توجه: جمله‌ی زمان انقضای فاکتور در کد سیستمی تولید می‌شود و جزو این متن نیست." if key.startswith("invoice_") else ""
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         f"✏️ ویرایش متن: {key}\n\nمتن فعلی:\n{current}{placeholder_note}{lock_note}\n\nمتن جدید را ارسال کنید:",
         reply_markup=admin_back_button(),
     )
@@ -1942,16 +1522,13 @@ def _template_vars(template: str) -> list[str]:
 async def admin_text_edit_save(message: types.Message, state: FSMContext):
     data = await state.get_data(); key = data.get("text_override_key")
     if key not in TEXT_KEYS:
-        await state.clear(); await answer_rich(message, "❌ عملیات منقضی شد."); return
-    # متن را دقیقاً همان‌طور که Telegram فرستاده نگه می‌داریم.
-    # offset/length مربوط به MessageEntity (خصوصاً custom_emoji) بر اساس همین
-    # متن و UTF-16 محاسبه شده؛ strip کردن قبل از ذخیره می‌تواند entityها را جابه‌جا کند.
-    value = message.text or ""
-    if not value.strip():
-        await answer_rich(message, "❌ متن نمی‌تواند خالی باشد:"); return
+        await state.clear(); await message.answer("❌ عملیات منقضی شد."); return
+    value = (message.text or "").strip()
+    if not value:
+        await message.answer("❌ متن نمی‌تواند خالی باشد:"); return
     # 🆕 فیکس: اگر این متن از سقف مجاز تلگرام برای متن پیام (۴۰۹۶ کاراکتر) بلندتر ذخیره شود، بعداً هر‌بار که این متن (مثلاً برای فاکتور، پیام راهنما و غیره) برای کاربر فرستاده شود، تلگرام خطای «MESSAGE_TOO_LONG» برمی‌گرداند. اینجا قبل از ذخیره‌شدن گرفته می‌شود (علاوه بر محافظتی که در show_menu_with_sticker اضافه شد).
     if len(value) > 3800:
-        await answer_rich(message, 
+        await message.answer(
             f"❌ این متن خیلی طولانی است ({len(value)} کاراکتر) و ممکن است تلگرام آن را رد کند (سقف تلگرام: ۴۰۹۶ کاراکتر). لطفاً متن کوتاه‌تری بفرست:"
         )
         return
@@ -1961,30 +1538,20 @@ async def admin_text_edit_save(message: types.Message, state: FSMContext):
         supplied = set(_template_vars(value))
         missing = required - supplied
         if missing:
-            await answer_rich(message, "❌ این متغیرهای ضروری حذف شده‌اند: " + ", ".join("{" + x + "}" for x in sorted(missing)))
+            await message.answer("❌ این متغیرهای ضروری حذف شده‌اند: " + ", ".join("{" + x + "}" for x in sorted(missing)))
             return
-    # تمام entityهای خود Telegram را ذخیره می‌کنیم؛ از جمله custom_emoji.
-    # این ID را جداگانه هم برای دکمه‌ها نگه می‌داریم، اما منبع اصلی نمایش متن
-    # همان entities_json است.
     entities = serialize_message_entities(getattr(message, "entities", None))
-    custom_emoji_id = next(
-        (str(entity["custom_emoji_id"]) for entity in entities
-         if entity.get("type") == "custom_emoji" and entity.get("custom_emoji_id")),
-        None,
-    )
+    custom_emoji_id = None
+    for entity in entities:
+        if entity.get("type") == "custom_emoji" and entity.get("custom_emoji_id"):
+            custom_emoji_id = str(entity["custom_emoji_id"])
+            break
     db.set_text_override(key, value, entities=entities)
     db.set_button_custom_emoji_id(key, custom_emoji_id)
     refresh_user_text(key)
     await state.clear()
     category = CATEGORY_BY_KEY.get(key)
-    page = 0
-    if category:
-        items = TEXT_CATEGORIES.get(category, [])
-        for idx, (item_key, _default) in enumerate(items):
-            if item_key == key:
-                page = idx // _TEXT_EDITOR_PAGE_SIZE
-                break
-    await answer_rich(message, "✅ متن ذخیره شد.", reply_markup=_text_manager_keyboard(category, page=page))
+    await message.answer("✅ متن ذخیره شد.", reply_markup=_text_manager_keyboard(category))
 
 
 # 📥 صف سفارشات — لیست خریدهای تأییدشده‌ای که هنوز کانفیگ‌شان ارسال نشده،
@@ -1999,18 +1566,18 @@ async def admin_orders_off(callback: types.CallbackQuery):
     db.set_orders_enabled(False)
     users = db.get_all_users()
     sent, failed = 0, 0
-    status_msg = await answer_rich(callback.message, f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
+    status_msg = await callback.message.answer(f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
     for u in users:
         try:
-            await send_rich(callback.bot, 
+            await callback.bot.send_message(
                 int(u["telegram_id"]),
                 db.get_text_override("orders_closed", "🔴 ربات به دلیل حجم سفارشات بالا موقتاً بسته می‌باشد.") + "\n\nروشن شدن دوباره‌ی آن اطلاع‌رسانی خواهد شد.",
             )
             sent += 1
         except Exception:
             failed += 1
-    await edit_rich(status_msg, f"🔴 بخش سفارشات خاموش شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
-    await edit_rich(callback.message, "👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(callback.from_user.id))
+    await status_msg.edit_text(f"🔴 بخش سفارشات خاموش شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
+    await callback.message.edit_text("👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(callback.from_user.id))
     await callback.answer()
 
 
@@ -2023,18 +1590,18 @@ async def admin_orders_on(callback: types.CallbackQuery):
     db.set_orders_enabled(True)
     users = db.get_all_users()
     sent, failed = 0, 0
-    status_msg = await answer_rich(callback.message, f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
+    status_msg = await callback.message.answer(f"⏳ در حال اطلاع‌رسانی به {len(users)} کاربر...")
     for u in users:
         try:
-            await send_rich(callback.bot, 
+            await callback.bot.send_message(
                 int(u["telegram_id"]),
                 db.get_text_override("orders_opened", "🟢 ربات مجدداً فعال شد!") + "\n\nبا زدن /start می‌توانید دوباره سفارش ثبت کنید.",
             )
             sent += 1
         except Exception:
             failed += 1
-    await edit_rich(status_msg, f"🟢 بخش سفارشات روشن شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
-    await edit_rich(callback.message, "👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(callback.from_user.id))
+    await status_msg.edit_text(f"🟢 بخش سفارشات روشن شد. اطلاع‌رسانی به {sent} نفر موفق، {failed} نفر ناموفق.")
+    await callback.message.edit_text("👨‍💻 پنل مدیریت:", reply_markup=_admin_panel_kb_for(callback.from_user.id))
     await callback.answer()
 
 
@@ -2050,7 +1617,7 @@ async def _render_order_queue(callback: types.CallbackQuery):
     else:
         text = f"📦 سفارش‌های در انتظار — {len(pending)} مورد در انتظار ارسال\n\nروی هرکدوم بزن تا مسیر ارسالش شروع بشه 👇"
 
-    await edit_rich(callback.message, text, reply_markup=admin_order_queue_keyboard(pending))
+    await callback.message.edit_text(text, reply_markup=admin_order_queue_keyboard(pending))
 
 
 @router.callback_query(F.data == "admin_request_queue")
@@ -2060,7 +1627,7 @@ async def admin_request_queue(callback: types.CallbackQuery):
         return
     order_count = len(db.get_pending_orders(limit=200))
     receipt_count = len(db.get_pending_receipts(limit=200))
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "📥 صف درخواست‌ها\n\nچه چیزی رو می‌خوای بررسی کنی؟ 👇",
         reply_markup=admin_request_queue_menu(order_count, receipt_count),
     )
@@ -2091,7 +1658,7 @@ async def _render_pending_receipts(callback: types.CallbackQuery):
     else:
         text = f"🧾 رسیدهای در انتظار تایید — {total} مورد\n\nروی ✅ برای تایید یا ❌ برای رد بزن 👇"
 
-    await edit_rich(callback.message, text, reply_markup=admin_pending_receipts_keyboard(receipts))
+    await callback.message.edit_text(text, reply_markup=admin_pending_receipts_keyboard(receipts))
 
 
 @router.callback_query(F.data == "admin_pending_receipts")
@@ -2108,7 +1675,7 @@ async def clear_receipts_confirm(callback: types.CallbackQuery):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "⚠️ مطمئنی می‌خوای همه‌ی رسیدهای این لیست رو بررسی‌شده علامت بزنی؟\n"
         "(توجه: این کار فقط لیست رو خالی می‌کنه؛ اگر هنوز به کاربری تایید/رد اعلام نکردی، "
         "پیام اصلی رسیدش همچنان توی چتت هست و باید از همونجا اقدام کنی.)",
@@ -2145,7 +1712,7 @@ async def clear_orders_confirm(callback: types.CallbackQuery):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "⚠️ مطمئنی می‌خوای همه‌ی سفارش‌های این صف رو پاک کنی؟\n"
         "(این کار فقط سفارش‌ها رو از صف حذف می‌کنه؛ اگه کانفیگ کسی رو نفرستادی، دیگه اینجا یادآوریش نمی‌مونه.)",
         reply_markup=admin_clear_orders_confirm_keyboard(),
@@ -2192,7 +1759,7 @@ async def admin_pm_start(callback: types.CallbackQuery, state: FSMContext):
     uid = callback.data.replace("pm_", "")
     await state.set_state(AdminStates.waiting_pm_message)
     await state.update_data(pm_target_uid=uid)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         f"✉️ پیامی که می‌خواهید به کاربر {uid} ارسال شود را بفرستید (متن، عکس، فیلم یا فوروارد هم پذیرفه است):",
         reply_markup=admin_pm_cancel_keyboard(uid),
     )
@@ -2265,7 +1832,7 @@ async def admin_delete_user_ask(callback: types.CallbackQuery):
         await callback.answer("❌ کاربر یافت نشد.", show_alert=True)
         return
 
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         f"⚠️ حذف کامل کاربر\n\n"
         f"👤 {user['name']}\n"
         f"🆔 {user['telegram_id']}\n\n"
@@ -2303,7 +1870,7 @@ async def admin_delete_user_confirm(callback: types.CallbackQuery):
         await callback.answer("❌ کاربر یافت نشد.", show_alert=True)
         return
 
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         f"✅ کاربر «{user['name']}» با شناسه {uid} فقط از دیتابیس ربات حذف شد.\n\n"
         "🔒 هیچ تغییری در Marzban یا PasarGuard انجام نشد.",
         reply_markup=admin_back_button(),
@@ -2332,16 +1899,13 @@ async def admin_view_user_services(callback: types.CallbackQuery):
 
     configs = db.get_configs(user["id"], include_deleted=True)
     await enrich_configs_with_subscription_names(configs)
-    for cfg in configs:
-        try: cfg["_live_status"] = await get_live_service_status(cfg)
-        except Exception: cfg["_live_status"] = None
     if not configs:
-        await edit_rich(callback.message, 
+        await callback.message.edit_text(
             f"📦 کاربر {uid} هنوز هیچ سرویسی نداره.",
             reply_markup=admin_back_button(),
         )
     else:
-        await edit_rich(callback.message, 
+        await callback.message.edit_text(
             f"📦 سرویس‌های کاربر {uid}\n\n❌ یعنی توسط خودِ کاربر حذف شده (ولی برای شما همچنان قابل‌مشاهده‌ست).\n\nروی هرکدوم بزن برای جزئیات و مدیریت 👇",
             reply_markup=admin_services_list_keyboard(configs, uid),
         )
@@ -2373,8 +1937,7 @@ async def _service_detail_text(cfg: dict) -> str:
     قابل‌اعتماد داره (html.escape) و این مشکل اصلاً پیش نمیاد.
     """
     icon = "🚀" if cfg.get("type", "vip") == "vip" else "🎮"
-    live = await get_live_service_status(cfg) if not cfg.get("deleted") else None
-    status = "❌ حذف‌شده (توسط کاربر یا ادمین)" if cfg.get("deleted") else ("🟢 فعال (لحظه‌ای از پنل)" if live == "active" else ("🔴 منقضی (لحظه‌ای از پنل)" if live == "expired" else "⚪ وضعیت لحظه‌ای نامشخص"))
+    status = "❌ حذف‌شده (توسط کاربر یا ادمین)" if cfg.get("deleted") else "✅ فعال"
     try:
         sub_preview = crypto.decrypt_config(cfg["config"])
     except Exception:
@@ -2458,14 +2021,14 @@ async def _render_service_detail(callback: types.CallbackQuery, cfg_id: int):
     # شکست بخوره، همون متن رو بدون فرمت (parse_mode=None) دوباره می‌فرستیم.
     # -----------------------------------------------------------------
     try:
-        await edit_rich(callback.message, text, parse_mode="HTML", reply_markup=kb)
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     except Exception as e:
         if "message is not modified" in str(e).lower():
             pass
         else:
             logger.exception("خطا در نمایش جزئیات سرویس ادمین برای cfg_id=%s", cfg_id)
             try:
-                await edit_rich(callback.message, text, parse_mode=None, reply_markup=kb)
+                await callback.message.edit_text(text, parse_mode=None, reply_markup=kb)
             except Exception:
                 logger.exception("خطا در fallback بدون فرمت برای جزئیات سرویس cfg_id=%s", cfg_id)
                 await callback.answer("❌ خطا در نمایش جزئیات سرویس. دوباره تلاش کنید.", show_alert=True)
@@ -2508,7 +2071,7 @@ async def admin_service_purge_confirm(callback: types.CallbackQuery):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     cfg_id = int(callback.data.replace("svcpurge_", ""))
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "⚠️ این کار غیرقابل بازگشته و کل اطلاعات این سرویس (شامل فایل‌های گیمینگ) برای همیشه پاک می‌شه.\n\nمطمئنی؟",
         reply_markup=admin_purge_confirm_keyboard(cfg_id),
     )
@@ -2525,7 +2088,7 @@ async def admin_service_purge_apply(callback: types.CallbackQuery):
     owner = db.get_user_by_id(cfg["user_id"]) if cfg else None
     uid = owner["telegram_id"] if owner else ""
     db.delete_config_permanently(cfg_id)
-    await edit_rich(callback.message, "✅ سرویس برای همیشه حذف شد.", reply_markup=admin_back_button())
+    await callback.message.edit_text("✅ سرویس برای همیشه حذف شد.", reply_markup=admin_back_button())
     await callback.answer()
 
 
@@ -2537,7 +2100,7 @@ async def admin_service_edit_link_start(callback: types.CallbackQuery, state: FS
     cfg_id = int(callback.data.replace("svcedit_link_", ""))
     await state.update_data(edit_config_id=cfg_id)
     await state.set_state(AdminStates.waiting_edit_sublink)
-    await answer_rich(callback.message, "🔗 لینک ساب جدید این سرویس رو ارسال کن:")
+    await callback.message.answer("🔗 لینک ساب جدید این سرویس رو ارسال کن:")
     await callback.answer()
 
 
@@ -2545,19 +2108,19 @@ async def admin_service_edit_link_start(callback: types.CallbackQuery, state: FS
 async def admin_service_edit_link_apply(message: types.Message, state: FSMContext):
     new_link = (message.text or "").strip()
     if not new_link.lower().startswith(("http://", "https://")):
-        await answer_rich(message, "❌ این یک لینک معتبر نیست؛ لطفاً لینک رو با http یا https ارسال کن:")
+        await message.answer("❌ این یک لینک معتبر نیست؛ لطفاً لینک رو با http یا https ارسال کن:")
         return
 
     data = await state.get_data()
     cfg_id = data.get("edit_config_id")
     cfg = db.get_config_by_id(cfg_id) if cfg_id else None
     if cfg is None:
-        await answer_rich(message, "❌ سرویس یافت نشد.")
+        await message.answer("❌ سرویس یافت نشد.")
         await state.clear()
         return
 
     db.update_config_link(cfg_id, crypto.encrypt_config(new_link))
-    await answer_rich(message, "✅ لینک ساب سرویس بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer("✅ لینک ساب سرویس بروزرسانی شد.", reply_markup=admin_back_button())
     await state.clear()
 
 
@@ -2569,7 +2132,7 @@ async def admin_service_edit_qr_start(callback: types.CallbackQuery, state: FSMC
     cfg_id = int(callback.data.replace("svcedit_qr_", ""))
     await state.update_data(edit_config_id=cfg_id)
     await state.set_state(AdminStates.waiting_edit_qr)
-    await answer_rich(callback.message, "🖼 عکس کیوآرکد جدید این سرویس رو ارسال کن:")
+    await callback.message.answer("🖼 عکس کیوآرکد جدید این سرویس رو ارسال کن:")
     await callback.answer()
 
 
@@ -2579,18 +2142,18 @@ async def admin_service_edit_qr_apply(message: types.Message, state: FSMContext)
     cfg_id = data.get("edit_config_id")
     cfg = db.get_config_by_id(cfg_id) if cfg_id else None
     if cfg is None:
-        await answer_rich(message, "❌ سرویس یافت نشد.")
+        await message.answer("❌ سرویس یافت نشد.")
         await state.clear()
         return
 
     db.set_config_qr(cfg_id, message.photo[-1].file_id)
-    await answer_rich(message, "✅ عکس کیوآرکد سرویس بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer("✅ عکس کیوآرکد سرویس بروزرسانی شد.", reply_markup=admin_back_button())
     await state.clear()
 
 
 @router.message(AdminStates.waiting_edit_qr)
 async def admin_service_edit_qr_wrong_format(message: types.Message):
-    await answer_rich(message, "📸 لطفاً عکس کیوآرکد رو ارسال کن (نه متن).")
+    await message.answer("📸 لطفاً عکس کیوآرکد رو ارسال کن (نه متن).")
 
 
 
@@ -2620,7 +2183,7 @@ async def admin_discount_list(callback: types.CallbackQuery):
     else:
         text = "🎟 کدهای تخفیف فعال:\n\nبرای مشاهده و ویرایش جزئیات هر کد، روی آن بزنید 👇"
 
-    await edit_rich(callback.message, text, reply_markup=admin_discount_menu(discounts))
+    await callback.message.edit_text(text, reply_markup=admin_discount_menu(discounts))
     await callback.answer()
 
 
@@ -2674,7 +2237,7 @@ async def admin_discount_detail(callback: types.CallbackQuery, state: FSMContext
     if d is None:
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id)
     )
     await callback.answer()
@@ -2690,7 +2253,7 @@ async def admin_discount_delete_ask(callback: types.CallbackQuery):
     if d is None:
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         f"❗️ آیا از حذف کد `{d['code']}` مطمئن هستید؟",
         parse_mode="Markdown",
         reply_markup=discount_delete_confirm_keyboard(discount_id),
@@ -2709,7 +2272,7 @@ async def admin_discount_delete_confirm(callback: types.CallbackQuery):
     discounts = db.get_all_discounts()
     text = "🎟 کدهای تخفیف فعال:\n\nبرای مشاهده و ویرایش جزئیات هر کد، روی آن بزنید 👇" if discounts else \
         "🎟 هیچ کد تخفیفی هنوز ثبت نشده.\n\nبرای ساخت کد جدید، دکمه‌ی زیر را بزنید 👇"
-    await edit_rich(callback.message, text, reply_markup=admin_discount_menu(discounts))
+    await callback.message.edit_text(text, reply_markup=admin_discount_menu(discounts))
 
 
 # --- ویرایش مقدار تخفیف (درصد/مبلغ) ---
@@ -2726,7 +2289,7 @@ async def admin_discount_edit_value_start(callback: types.CallbackQuery, state: 
     await state.update_data(edit_discount_id=discount_id)
     label = "درصد جدید را وارد کنید (بین ۱ تا ۱۰۰)" if d.get("discount_type") != "amount" else \
         "مبلغ ثابت جدید را به تومان وارد کنید"
-    await edit_rich(callback.message, f"✏️ {label}:", reply_markup=admin_back_button())
+    await callback.message.edit_text(f"✏️ {label}:", reply_markup=admin_back_button())
     await state.set_state(AdminStates.waiting_discount_edit_value)
     await callback.answer()
 
@@ -2737,29 +2300,29 @@ async def admin_discount_edit_value_save(message: types.Message, state: FSMConte
     discount_id = data.get("edit_discount_id")
     d = db.get_discount_by_id(discount_id) if discount_id else None
     if d is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
         await state.clear()
         return
 
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد وارد کنید:")
+        await message.answer("❌ فقط عدد وارد کنید:")
         return
     value = int(clean_numeric_id(message.text))
     if d.get("discount_type") == "amount":
         if value <= 0:
-            await answer_rich(message, "❌ مبلغ باید بزرگ‌تر از صفر باشد:")
+            await message.answer("❌ مبلغ باید بزرگ‌تر از صفر باشد:")
             return
         db.update_discount(discount_id, amount=value)
     else:
         if not (1 <= value <= 100):
-            await answer_rich(message, "❌ درصد باید بین ۱ تا ۱۰۰ باشد:")
+            await message.answer("❌ درصد باید بین ۱ تا ۱۰۰ باشد:")
             return
         db.update_discount(discount_id, percent=value)
 
     await state.clear()
     d = db.get_discount_by_id(discount_id)
-    await answer_rich(message, "✅ مقدار تخفیف بروزرسانی شد.", reply_markup=admin_back_button())
-    await answer_rich(message, _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
+    await message.answer("✅ مقدار تخفیف بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer(_discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
 
 
 # --- ویرایش تعداد استفاده‌ی باقی‌مانده ---
@@ -2773,7 +2336,7 @@ async def admin_discount_edit_uses_start(callback: types.CallbackQuery, state: F
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
     await state.update_data(edit_discount_id=discount_id)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "✏️ تعداد دفعات مجاز باقی‌مانده‌ی این کد را وارد کنید (مثلاً 50):",
         reply_markup=admin_back_button(),
     )
@@ -2786,18 +2349,18 @@ async def admin_discount_edit_uses_save(message: types.Message, state: FSMContex
     data = await state.get_data()
     discount_id = data.get("edit_discount_id")
     if not message.text or not clean_numeric_id(message.text).isdigit() or int(clean_numeric_id(message.text)) < 0:
-        await answer_rich(message, "❌ لطفاً یک عدد صحیح غیرمنفی وارد کنید:")
+        await message.answer("❌ لطفاً یک عدد صحیح غیرمنفی وارد کنید:")
         return
     if db.get_discount_by_id(discount_id) is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
         await state.clear()
         return
 
     db.update_discount(discount_id, uses=int(clean_numeric_id(message.text)))
     await state.clear()
     d = db.get_discount_by_id(discount_id)
-    await answer_rich(message, "✅ تعداد استفاده بروزرسانی شد.", reply_markup=admin_back_button())
-    await answer_rich(message, _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
+    await message.answer("✅ تعداد استفاده بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer(_discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
 
 
 # --- ویرایش حداقل مبلغ سفارش ---
@@ -2811,7 +2374,7 @@ async def admin_discount_edit_minorder_start(callback: types.CallbackQuery, stat
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
     await state.update_data(edit_discount_id=discount_id)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "✏️ حداقل مبلغ سفارش (به تومان) برای استفاده از این کد را وارد کنید.\n"
         "برای برداشتن محدودیت، عدد 0 را ارسال کنید.",
         reply_markup=admin_back_button(),
@@ -2825,18 +2388,18 @@ async def admin_discount_edit_minorder_save(message: types.Message, state: FSMCo
     data = await state.get_data()
     discount_id = data.get("edit_discount_id")
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد وارد کنید:")
+        await message.answer("❌ فقط عدد وارد کنید:")
         return
     if db.get_discount_by_id(discount_id) is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
         await state.clear()
         return
 
     db.update_discount(discount_id, min_order_amount=int(clean_numeric_id(message.text)))
     await state.clear()
     d = db.get_discount_by_id(discount_id)
-    await answer_rich(message, "✅ حداقل مبلغ سفارش بروزرسانی شد.", reply_markup=admin_back_button())
-    await answer_rich(message, _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
+    await message.answer("✅ حداقل مبلغ سفارش بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer(_discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
 
 
 # --- ویرایش سقف استفاده‌ی هر کاربر ---
@@ -2850,7 +2413,7 @@ async def admin_discount_edit_maxuser_start(callback: types.CallbackQuery, state
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
     await state.update_data(edit_discount_id=discount_id)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "✏️ سقف تعداد دفعات استفاده‌ی هر کاربر از این کد را وارد کنید.\n"
         "برای بی‌محدودیت‌کردن، عدد 0 را ارسال کنید.",
         reply_markup=admin_back_button(),
@@ -2864,18 +2427,18 @@ async def admin_discount_edit_maxuser_save(message: types.Message, state: FSMCon
     data = await state.get_data()
     discount_id = data.get("edit_discount_id")
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد وارد کنید:")
+        await message.answer("❌ فقط عدد وارد کنید:")
         return
     if db.get_discount_by_id(discount_id) is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
         await state.clear()
         return
 
     db.update_discount(discount_id, max_uses_per_user=int(clean_numeric_id(message.text)))
     await state.clear()
     d = db.get_discount_by_id(discount_id)
-    await answer_rich(message, "✅ سقف استفاده‌ی هر کاربر بروزرسانی شد.", reply_markup=admin_back_button())
-    await answer_rich(message, _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
+    await message.answer("✅ سقف استفاده‌ی هر کاربر بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer(_discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
 
 
 # --- ویرایش تاریخ انقضا ---
@@ -2889,7 +2452,7 @@ async def admin_discount_edit_expiry_start(callback: types.CallbackQuery, state:
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
     await state.update_data(edit_discount_id=discount_id)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "✏️ تاریخ انقضا را به‌فرمت `YYYY-MM-DD` (مثلاً 2026-12-31) وارد کنید.\n"
         "برای برداشتن انقضا (کد همیشه معتبر باشد)، عدد 0 را ارسال کنید.",
         parse_mode="Markdown",
@@ -2904,7 +2467,7 @@ async def admin_discount_edit_expiry_save(message: types.Message, state: FSMCont
     data = await state.get_data()
     discount_id = data.get("edit_discount_id")
     if db.get_discount_by_id(discount_id) is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
         await state.clear()
         return
 
@@ -2915,14 +2478,14 @@ async def admin_discount_edit_expiry_save(message: types.Message, state: FSMCont
         try:
             parsed = datetime.strptime(raw, "%Y-%m-%d")
         except ValueError:
-            await answer_rich(message, "❌ فرمت نامعتبر است؛ به‌صورت YYYY-MM-DD وارد کنید (یا 0 برای حذف انقضا):")
+            await message.answer("❌ فرمت نامعتبر است؛ به‌صورت YYYY-MM-DD وارد کنید (یا 0 برای حذف انقضا):")
             return
         db.update_discount(discount_id, expires_at=parsed.strftime("%Y-%m-%d 23:59:59"))
 
     await state.clear()
     d = db.get_discount_by_id(discount_id)
-    await answer_rich(message, "✅ تاریخ انقضا بروزرسانی شد.", reply_markup=admin_back_button())
-    await answer_rich(message, _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
+    await message.answer("✅ تاریخ انقضا بروزرسانی شد.", reply_markup=admin_back_button())
+    await message.answer(_discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
 
 
 # --- ویرایش کاربران مجاز ---
@@ -2936,7 +2499,7 @@ async def admin_discount_edit_users_start(callback: types.CallbackQuery, state: 
         await callback.answer("❌ این کد تخفیف یافت نشد.", show_alert=True)
         return
     await state.update_data(edit_discount_id=discount_id)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "👤 آیدی‌های عددی تلگرام مجاز به استفاده از این کد را وارد کنید "
         "(هرکدام با کاما، فاصله یا خط جدید جدا شود).\n\n"
         "برای برداشتن محدودیت (باز کردن کد برای همه‌ی کاربران) عدد 0 را ارسال کنید.",
@@ -2951,7 +2514,7 @@ async def admin_discount_edit_users_save(message: types.Message, state: FSMConte
     data = await state.get_data()
     discount_id = data.get("edit_discount_id")
     if db.get_discount_by_id(discount_id) is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ مشکلی پیش آمد.", reply_markup=admin_discount_menu(db.get_all_discounts()))
         await state.clear()
         return
 
@@ -2963,7 +2526,7 @@ async def admin_discount_edit_users_save(message: types.Message, state: FSMConte
         summary = "بدون محدودیت (همه‌ی کاربران)"
     else:
         if not all(p.lstrip("-").isdigit() for p in ids):
-            await answer_rich(message, "❌ فقط آیدی‌های عددی معتبر وارد کنید (یا 0 برای باز کردن برای همه):")
+            await message.answer("❌ فقط آیدی‌های عددی معتبر وارد کنید (یا 0 برای باز کردن برای همه):")
             return
         ids = sorted(set(ids))
         db.update_discount(discount_id, allowed_user_ids=ids)
@@ -2971,8 +2534,8 @@ async def admin_discount_edit_users_save(message: types.Message, state: FSMConte
 
     await state.clear()
     d = db.get_discount_by_id(discount_id)
-    await answer_rich(message, f"✅ کاربران مجاز بروزرسانی شد: {summary}", parse_mode="Markdown", reply_markup=admin_back_button())
-    await answer_rich(message, _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
+    await message.answer(f"✅ کاربران مجاز بروزرسانی شد: {summary}", parse_mode="Markdown", reply_markup=admin_back_button())
+    await message.answer(_discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id))
 
 
 # --- ویرایش پلن‌های مجاز ---
@@ -2988,7 +2551,7 @@ async def admin_discount_edit_plans_start(callback: types.CallbackQuery, state: 
         return
     selected = db._discount_plans(d) or []
     await state.update_data(edit_discount_id=discount_id, edit_discount_plans=selected)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "🎯 پلن‌های مجاز برای این کد را انتخاب کنید (هرکدام را بزنید تا انتخاب/لغو شود):",
         reply_markup=discount_plans_edit_keyboard(discount_id, selected),
     )
@@ -3013,7 +2576,7 @@ async def admin_discount_edit_plans_toggle(callback: types.CallbackQuery, state:
         db.update_discount(discount_id, applicable_plans=selected or None)
         await state.clear()
         d = db.get_discount_by_id(discount_id)
-        await edit_rich(callback.message, 
+        await callback.message.edit_text(
             _discount_detail_text(d), parse_mode="Markdown", reply_markup=discount_detail_keyboard(discount_id)
         )
         await callback.answer("✅ پلن‌های مجاز ذخیره شد.")
@@ -3032,7 +2595,7 @@ async def new_discount_start(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     await state.clear()
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "🎟 ساخت کد تخفیف جدید — مرحله ۱ از ۶\n\n"
         "✏️ کد تخفیف مورد نظر را بدون فاصله وارد کنید (مثلاً SUMMER20):",
         reply_markup=admin_back_button(),
@@ -3045,10 +2608,10 @@ async def new_discount_start(callback: types.CallbackQuery, state: FSMContext):
 async def new_discount_code_input(message: types.Message, state: FSMContext):
     code = message.text.strip().upper() if message.text else ""
     if not code or " " in code:
-        await answer_rich(message, "❌ کد نامعتبر است؛ بدون فاصله دوباره وارد کنید:")
+        await message.answer("❌ کد نامعتبر است؛ بدون فاصله دوباره وارد کنید:")
         return
     await state.update_data(new_discount_code=code)
-    await answer_rich(message, 
+    await message.answer(
         "🎟 مرحله ۲ از ۶\n\nنوع تخفیف را انتخاب کنید:", reply_markup=discount_type_keyboard()
     )
 
@@ -3059,7 +2622,7 @@ async def new_discount_type_chosen(callback: types.CallbackQuery, state: FSMCont
     await state.update_data(new_discount_type=disc_type, new_discount_plans=[])
     label = "درصد تخفیف را وارد کنید (عددی بین ۱ تا ۱۰۰، مثلاً 20)" if disc_type == "percent" else \
         "مبلغ ثابت تخفیف را به تومان وارد کنید (مثلاً 20000)"
-    await edit_rich(callback.message, f"🎟 مرحله ۳ از ۶\n\n💯 {label}:")
+    await callback.message.edit_text(f"🎟 مرحله ۳ از ۶\n\n💯 {label}:")
     await state.set_state(AdminStates.waiting_discount_value_step)
     await callback.answer()
 
@@ -3069,18 +2632,18 @@ async def new_discount_value_input(message: types.Message, state: FSMContext):
     data = await state.get_data()
     disc_type = data.get("new_discount_type", "percent")
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد وارد کنید:")
+        await message.answer("❌ فقط عدد وارد کنید:")
         return
     value = int(clean_numeric_id(message.text))
     if disc_type == "percent" and not (1 <= value <= 100):
-        await answer_rich(message, "❌ درصد باید بین ۱ تا ۱۰۰ باشد:")
+        await message.answer("❌ درصد باید بین ۱ تا ۱۰۰ باشد:")
         return
     if disc_type == "amount" and value <= 0:
-        await answer_rich(message, "❌ مبلغ باید بزرگ‌تر از صفر باشد:")
+        await message.answer("❌ مبلغ باید بزرگ‌تر از صفر باشد:")
         return
 
     await state.update_data(new_discount_value=value)
-    await answer_rich(message, 
+    await message.answer(
         "🎟 مرحله ۴ از ۶\n\n"
         "🎯 این کد روی کدام پلن‌ها اعمال شود؟ (هرکدام را بزنید تا انتخاب/لغو شود؛ "
         "اگر «همه‌ی پلن‌ها» را بزنید، هیچ محدودیتی نخواهد داشت):",
@@ -3098,7 +2661,7 @@ async def new_discount_plan_toggle(callback: types.CallbackQuery, state: FSMCont
         selected = []
     elif key == "done":
         await state.update_data(new_discount_plans=selected)
-        await edit_rich(callback.message, 
+        await callback.message.edit_text(
             "🎟 مرحله ۵ از ۶\n\n"
             "👤 این کد فقط برای چه کاربرانی مجاز باشد؟\n\n"
             "آیدی‌های عددی تلگرام را وارد کنید (هرکدام با کاما، فاصله یا خط جدید جدا شود).\n"
@@ -3125,10 +2688,10 @@ async def new_discount_users_input(message: types.Message, state: FSMContext):
     elif all(p.lstrip("-").isdigit() for p in ids):
         await state.update_data(new_discount_users=sorted(set(ids)))
     else:
-        await answer_rich(message, "❌ فقط آیدی‌های عددی معتبر وارد کنید (یا 0 برای باز کردن برای همه):")
+        await message.answer("❌ فقط آیدی‌های عددی معتبر وارد کنید (یا 0 برای باز کردن برای همه):")
         return
 
-    await answer_rich(message, 
+    await message.answer(
         "🎟 مرحله ۶ از ۶\n\n🔁 تعداد دفعات مجاز استفاده از این کد را وارد کنید (مثلاً 50):"
     )
     await state.set_state(AdminStates.waiting_discount_uses_step)
@@ -3137,7 +2700,7 @@ async def new_discount_users_input(message: types.Message, state: FSMContext):
 @router.message(AdminStates.waiting_discount_uses_step)
 async def new_discount_uses_input(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit() or int(clean_numeric_id(message.text)) <= 0:
-        await answer_rich(message, "❌ لطفاً یک عدد صحیح مثبت وارد کنید:")
+        await message.answer("❌ لطفاً یک عدد صحیح مثبت وارد کنید:")
         return
 
     data = await state.get_data()
@@ -3162,7 +2725,7 @@ async def new_discount_uses_input(message: types.Message, state: FSMContext):
         all_plans = db.get_all_plans()
         plans_text = "همه‌ی پلن‌ها" if not plans else ", ".join(all_plans.get(p, {}).get("name", p) for p in plans)
         users_text = "همه‌ی کاربران" if not allowed_users else "، ".join(f"`{i}`" for i in allowed_users)
-        await answer_rich(message, 
+        await message.answer(
             f"✅ کد تخفیف جدید با موفقیت ساخته شد! 🎉\n\n"
             f"🎟 کد: `{code}`\n💯 مقدار: {value_text}\n🎯 پلن‌ها: {plans_text}\n"
             f"👤 کاربران مجاز: {users_text}\n🔁 تعداد استفاده: {uses}",
@@ -3170,7 +2733,7 @@ async def new_discount_uses_input(message: types.Message, state: FSMContext):
             reply_markup=admin_discount_menu(db.get_all_discounts()),
         )
     except Exception:
-        await answer_rich(message, "❌ این کد قبلاً ثبت شده.", reply_markup=admin_discount_menu(db.get_all_discounts()))
+        await message.answer("❌ این کد قبلاً ثبت شده.", reply_markup=admin_discount_menu(db.get_all_discounts()))
     await state.clear()
 
 
@@ -3203,7 +2766,7 @@ async def _render_referrers_page(callback: types.CallbackQuery, page: int):
     total = db.count_referrers()
     users = db.get_referrers_page(page, REFERRERS_PER_PAGE)
     has_next = total > (page + 1) * REFERRERS_PER_PAGE
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         _referrers_page_text(page, total),
         reply_markup=admin_referrers_page_keyboard(users, page, has_next),
     )
@@ -3251,7 +2814,7 @@ async def admin_referrer_detail(callback: types.CallbackQuery):
                 f"🎁 پاداش: {reward:,} تومان | وضعیت: {status}\n"
             )
 
-    await edit_rich(callback.message, text, reply_markup=admin_referred_detail_keyboard(uid, page))
+    await callback.message.edit_text(text, reply_markup=admin_referred_detail_keyboard(uid, page))
     await callback.answer()
 
 
@@ -3288,7 +2851,7 @@ async def admin_agency_list(callback: types.CallbackQuery):
         "🤝 نمایندگان فعلی (تخفیف خودکار روی VIP)\n\nروی هرکدام بزنید تا مثل بخش «کاربران» مدیریتش کنید 👇"
     )
 
-    await edit_rich(callback.message, text, reply_markup=admin_agency_menu(agents))
+    await callback.message.edit_text(text, reply_markup=admin_agency_menu(agents))
     await callback.answer()
 
 
@@ -3297,7 +2860,7 @@ async def new_agent_start(callback: types.CallbackQuery, state: FSMContext):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "🤝 افزودن نماینده — مرحله ۱ از ۲\n\n"
         "🆔 آیدی عددی (Telegram ID) فرد را ارسال کنید:",
         reply_markup=admin_back_button(),
@@ -3310,10 +2873,10 @@ async def new_agent_start(callback: types.CallbackQuery, state: FSMContext):
 async def new_agent_id_input(message: types.Message, state: FSMContext):
     tid = (message.text or "").strip()
     if not tid.isdigit():
-        await answer_rich(message, "❌ آیدی عددی نامعتبر است؛ فقط عدد ارسال کنید:")
+        await message.answer("❌ آیدی عددی نامعتبر است؛ فقط عدد ارسال کنید:")
         return
     await state.update_data(new_agent_id=tid)
-    await answer_rich(message, 
+    await message.answer(
         f"🧾 مرحله ۲ از ۲\n\n💯 درصد تخفیف VIP برای این نماینده را وارد کنید "
         f"(پیش‌فرض پیشنهادی: {AGENCY_VIP_DISCOUNT_PERCENT}):"
     )
@@ -3323,13 +2886,13 @@ async def new_agent_id_input(message: types.Message, state: FSMContext):
 @router.message(AdminStates.waiting_agent_percent_step)
 async def new_agent_percent_input(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit() or not (1 <= int(clean_numeric_id(message.text)) <= 100):
-        await answer_rich(message, "❌ لطفاً یک عدد بین ۱ تا ۱۰۰ وارد کنید:")
+        await message.answer("❌ لطفاً یک عدد بین ۱ تا ۱۰۰ وارد کنید:")
         return
     data = await state.get_data()
     tid = data.get("new_agent_id")
     percent = int(clean_numeric_id(message.text))
     db.add_agent(tid, percent)
-    await answer_rich(message, 
+    await message.answer(
         f"✅ نماینده ثبت شد!\n\n🆔 {tid}\n💯 تخفیف VIP: {percent}٪\n\n"
         f"از این به بعد، خریدهای VIP این آیدی به‌صورت خودکار {percent}٪ تخفیف می‌خورد.",
         reply_markup=admin_agency_menu(db.get_all_agents()),
@@ -3364,7 +2927,7 @@ async def admin_agent_open(callback: types.CallbackQuery):
 
     user = db.get_user(tid)
     if user is None:
-        await edit_rich(callback.message, 
+        await callback.message.edit_text(
             f"🤝 نماینده 🆔 {tid} | 💯 {agent['vip_discount_percent']}٪\n\n"
             "⚠️ این آیدی هنوز ربات را /start نزده؛ اطلاعات کاربری‌ای برایش ثبت نشده.",
             reply_markup=admin_agent_actions_keyboard(tid),
@@ -3373,7 +2936,7 @@ async def admin_agent_open(callback: types.CallbackQuery):
         return
 
     text = _user_detail_text(user) + f"\n\n🤝 درصد تخفیف نمایندگی (VIP): {agent['vip_discount_percent']}٪"
-    await edit_rich(callback.message, text, reply_markup=admin_agent_actions_keyboard(tid))
+    await callback.message.edit_text(text, reply_markup=admin_agent_actions_keyboard(tid))
     await callback.answer()
 
 
@@ -3388,26 +2951,26 @@ async def admin_agent_edit_percent_start(callback: types.CallbackQuery, state: F
         return
     await state.update_data(edit_agent_id=tid)
     await state.set_state(AdminStates.waiting_agent_edit_percent)
-    await edit_rich(callback.message, "💯 درصد تخفیف جدید (بین ۱ تا ۱۰۰) را ارسال کنید:")
+    await callback.message.edit_text("💯 درصد تخفیف جدید (بین ۱ تا ۱۰۰) را ارسال کنید:")
     await callback.answer()
 
 
 @router.message(AdminStates.waiting_agent_edit_percent)
 async def admin_agent_edit_percent_apply(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit() or not (1 <= int(clean_numeric_id(message.text)) <= 100):
-        await answer_rich(message, "❌ لطفاً یک عدد بین ۱ تا ۱۰۰ وارد کنید:")
+        await message.answer("❌ لطفاً یک عدد بین ۱ تا ۱۰۰ وارد کنید:")
         return
     data = await state.get_data()
     tid = data.get("edit_agent_id")
     agent = db.get_agent(tid) if tid else None
     if agent is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد؛ از ابتدا امتحان کنید.", reply_markup=admin_agency_menu(db.get_all_agents()))
+        await message.answer("❌ مشکلی پیش آمد؛ از ابتدا امتحان کنید.", reply_markup=admin_agency_menu(db.get_all_agents()))
         await state.clear()
         return
 
     percent = int(clean_numeric_id(message.text))
     db.add_agent(tid, percent, agent.get("note"))
-    await answer_rich(message, 
+    await message.answer(
         f"✅ درصد تخفیف نماینده به‌روزرسانی شد:\n🆔 {tid}\n💯 {percent}٪",
         reply_markup=admin_agent_actions_keyboard(tid),
     )
@@ -3437,7 +3000,7 @@ async def admin_vip_categories_list(callback: types.CallbackQuery):
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "🗂 دسته‌بندی‌های VIP\n\n"
         "این دسته‌ها همان چیزی هستند که کاربر موقع «خرید اشتراک → سرور VIP» می‌بیند.\n"
         "برای مدیریت پلن‌های داخل هر دسته، روی آن بزنید 👇",
@@ -3452,7 +3015,7 @@ async def admin_new_vip_category_start(callback: types.CallbackQuery, state: FSM
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     await state.set_state(AdminStates.waiting_vip_category_name)
-    await edit_rich(callback.message, "🗂 نام دسته‌بندی جدید را ارسال کنید (مثلاً «💎 حجم بالای ویژه»):")
+    await callback.message.edit_text("🗂 نام دسته‌بندی جدید را ارسال کنید (مثلاً «💎 حجم بالای ویژه»):")
     await callback.answer()
 
 
@@ -3460,11 +3023,11 @@ async def admin_new_vip_category_start(callback: types.CallbackQuery, state: FSM
 async def admin_new_vip_category_apply(message: types.Message, state: FSMContext):
     name = (message.text or "").strip()
     if not name:
-        await answer_rich(message, "❌ نام نمی‌تواند خالی باشد؛ دوباره ارسال کنید:")
+        await message.answer("❌ نام نمی‌تواند خالی باشد؛ دوباره ارسال کنید:")
         return
     cat = db.create_vip_category(name)
     _save_dynamic_premium_emoji(name, message)
-    await answer_rich(message, 
+    await message.answer(
         f"✅ دسته‌بندی «{name}» ساخته شد!\n\nحالا می‌توانید از داخل همین دسته، پلن اضافه کنید 👇",
         reply_markup=admin_vip_category_detail_keyboard(cat["key"]),
     )
@@ -3483,7 +3046,7 @@ async def admin_vip_category_detail(callback: types.CallbackQuery):
         return
     plans = db.get_vip_plans(cat["id"])
     text = f"🗂 {cat['name']}\n\n📦 تعداد پلن: {len(plans)}\n\nبرای مدیریت هر پلن روی آن بزنید 👇"
-    await edit_rich(callback.message, text, reply_markup=admin_vip_category_detail_keyboard(category_key))
+    await callback.message.edit_text(text, reply_markup=admin_vip_category_detail_keyboard(category_key))
     await callback.answer()
 
 
@@ -3517,7 +3080,7 @@ async def admin_new_vip_plan_start(callback: types.CallbackQuery, state: FSMCont
         return
     await state.update_data(new_vip_plan_category=category_key)
     await state.set_state(AdminStates.waiting_vip_plan_name)
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "📦 افزودن پلن جدید — مرحله ۱ از ۵\n\n✏️ نام پلن را ارسال کنید (مثلاً «۲۰۰ گیگ | کاربر و زمان ∞»):"
     )
     await callback.answer()
@@ -3527,22 +3090,22 @@ async def admin_new_vip_plan_start(callback: types.CallbackQuery, state: FSMCont
 async def admin_new_vip_plan_name(message: types.Message, state: FSMContext):
     name = (message.text or "").strip()
     if not name:
-        await answer_rich(message, "❌ نام نمی‌تواند خالی باشد؛ دوباره ارسال کنید:")
+        await message.answer("❌ نام نمی‌تواند خالی باشد؛ دوباره ارسال کنید:")
         return
     _save_dynamic_premium_emoji(name, message)
     await state.update_data(new_vip_plan_name=name)
     await state.set_state(AdminStates.waiting_vip_plan_price)
-    await answer_rich(message, "📦 مرحله ۲ از ۵\n\n💰 قیمت را به تومان (فقط عدد) ارسال کنید:")
+    await message.answer("📦 مرحله ۲ از ۵\n\n💰 قیمت را به تومان (فقط عدد) ارسال کنید:")
 
 
 @router.message(AdminStates.waiting_vip_plan_price)
 async def admin_new_vip_plan_price(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید:")
+        await message.answer("❌ فقط عدد ارسال کنید:")
         return
     await state.update_data(new_vip_plan_price=int(clean_numeric_id(message.text)))
     await state.set_state(AdminStates.waiting_vip_plan_gb)
-    await answer_rich(message, 
+    await message.answer(
         "📦 مرحله ۳ از ۵\n\n🗜 حجم را به گیگابایت ارسال کنید (اگر نامحدود است، عدد 0 را بفرستید):"
     )
 
@@ -3550,21 +3113,21 @@ async def admin_new_vip_plan_price(message: types.Message, state: FSMContext):
 @router.message(AdminStates.waiting_vip_plan_gb)
 async def admin_new_vip_plan_gb(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید (برای نامحدود، 0):")
+        await message.answer("❌ فقط عدد ارسال کنید (برای نامحدود، 0):")
         return
     await state.update_data(new_vip_plan_gb=int(clean_numeric_id(message.text)))
     await state.set_state(AdminStates.waiting_vip_plan_days)
-    await answer_rich(message, "📦 مرحله ۴ از ۵\n\n⏳ مدت را به روز ارسال کنید (اگر نامحدود است، عدد 0 را بفرستید):")
+    await message.answer("📦 مرحله ۴ از ۵\n\n⏳ مدت را به روز ارسال کنید (اگر نامحدود است، عدد 0 را بفرستید):")
 
 
 @router.message(AdminStates.waiting_vip_plan_days)
 async def admin_new_vip_plan_days(message: types.Message, state: FSMContext):
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید (برای نامحدود، 0):")
+        await message.answer("❌ فقط عدد ارسال کنید (برای نامحدود، 0):")
         return
     await state.update_data(new_vip_plan_days=int(clean_numeric_id(message.text)))
     await state.set_state(AdminStates.waiting_vip_plan_userlimit)
-    await answer_rich(message, 
+    await message.answer(
         "📦 مرحله ۵ از ۵\n\n"
         "👥 سقف کاربر همزمان (HWID Limit) را به عدد ارسال کنید (۰ تا ۱۰، ۰ = نامحدود):"
     )
@@ -3574,13 +3137,13 @@ async def admin_new_vip_plan_days(message: types.Message, state: FSMContext):
 async def admin_new_vip_plan_userlimit(message: types.Message, state: FSMContext):
     user_limit = parse_int_in_range((message.text or "").strip(), 0, 10)
     if user_limit is None:
-        await answer_rich(message, "❌ عددی بین ۰ تا ۱۰ ارسال کنید (۰ = نامحدود):")
+        await message.answer("❌ عددی بین ۰ تا ۱۰ ارسال کنید (۰ = نامحدود):")
         return
     data = await state.get_data()
     category_key = data.get("new_vip_plan_category")
     cat = db.get_vip_category(category_key)
     if cat is None:
-        await answer_rich(message, "❌ مشکلی پیش آمد؛ از ابتدا امتحان کنید.")
+        await message.answer("❌ مشکلی پیش آمد؛ از ابتدا امتحان کنید.")
         await state.clear()
         return
 
@@ -3592,7 +3155,7 @@ async def admin_new_vip_plan_userlimit(message: types.Message, state: FSMContext
     plan_key = db.add_vip_plan(cat["id"], name, price, days=days, volume_gb=volume_gb, user_limit=user_limit)
     # Emoji was captured from the name message; store it under the stable dynamic-name key.
     # (Calling again is harmless and keeps the flow resilient to FSM serialization.)
-    await answer_rich(message, 
+    await message.answer(
         f"✅ پلن جدید اضافه شد! 🎉\n\n📦 {name}\n💰 {price:,} تومان\n🗜 "
         f"{volume_gb if volume_gb else 'نامحدود'} گیگ\n⏳ {days if days else 'نامحدود'} روز\n👥 {'نامحدود' if user_limit == 0 else f'{user_limit} کاربر'} همزمان",
         reply_markup=admin_vip_category_detail_keyboard(category_key),
@@ -3620,7 +3183,7 @@ async def admin_vip_plan_detail(callback: types.CallbackQuery):
         f"👥 سقف کاربر: {'نامحدود' if plan.get('user_limit', 0) == 0 else str(plan['user_limit']) + ' کاربر'}\n"
         f"🗂 دسته: {cat['name'] if cat else '-'}"
     )
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         text, reply_markup=admin_vip_plan_detail_keyboard(plan_key, cat["key"] if cat else "")
     )
     await callback.answer()
@@ -3637,7 +3200,7 @@ def _vip_plan_edit_starter(field_state, prompt: str, prefix: str):
             return
         await state.update_data(edit_vip_plan_key=plan_key)
         await state.set_state(field_state)
-        await edit_rich(callback.message, prompt)
+        await callback.message.edit_text(prompt)
         await callback.answer()
     return handler
 
@@ -3666,7 +3229,7 @@ router.callback_query(F.data.startswith("vipplanuserlimit_"))(
 async def _after_vip_plan_edit(message: types.Message, state: FSMContext, plan_key: str, success_text: str):
     plan = db.get_vip_plan(plan_key)
     cat = db.get_vip_category(plan["category_id"]) if plan else None
-    await answer_rich(message, 
+    await message.answer(
         success_text,
         reply_markup=admin_vip_plan_detail_keyboard(plan_key, cat["key"] if cat else ""),
     )
@@ -3679,7 +3242,7 @@ async def admin_vip_plan_edit_name_apply(message: types.Message, state: FSMConte
     plan_key = data.get("edit_vip_plan_key")
     new_name = (message.text or "").strip()
     if not plan_key or not new_name:
-        await answer_rich(message, "❌ متن نامعتبر است؛ دوباره ارسال کنید:")
+        await message.answer("❌ متن نامعتبر است؛ دوباره ارسال کنید:")
         return
     old_plan = db.get_vip_plan(plan_key)
     old_name = (old_plan or {}).get("name")
@@ -3695,7 +3258,7 @@ async def admin_vip_plan_edit_price_apply(message: types.Message, state: FSMCont
     data = await state.get_data()
     plan_key = data.get("edit_vip_plan_key")
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید:")
+        await message.answer("❌ فقط عدد ارسال کنید:")
         return
     price = int(clean_numeric_id(message.text))
     db.update_vip_plan(plan_key, price=price)
@@ -3707,7 +3270,7 @@ async def admin_vip_plan_edit_gb_apply(message: types.Message, state: FSMContext
     data = await state.get_data()
     plan_key = data.get("edit_vip_plan_key")
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید (0 = نامحدود):")
+        await message.answer("❌ فقط عدد ارسال کنید (0 = نامحدود):")
         return
     volume_gb = int(clean_numeric_id(message.text))
     db.update_vip_plan(plan_key, volume_gb=volume_gb)
@@ -3721,7 +3284,7 @@ async def admin_vip_plan_edit_days_apply(message: types.Message, state: FSMConte
     data = await state.get_data()
     plan_key = data.get("edit_vip_plan_key")
     if not message.text or not clean_numeric_id(message.text).isdigit():
-        await answer_rich(message, "❌ فقط عدد ارسال کنید (0 = نامحدود):")
+        await message.answer("❌ فقط عدد ارسال کنید (0 = نامحدود):")
         return
     days = int(clean_numeric_id(message.text))
     db.update_vip_plan(plan_key, days=days)
@@ -3736,7 +3299,7 @@ async def admin_vip_plan_edit_userlimit_apply(message: types.Message, state: FSM
     plan_key = data.get("edit_vip_plan_key")
     user_limit = parse_int_in_range((message.text or "").strip(), 0, 10)
     if user_limit is None:
-        await answer_rich(message, "❌ عددی بین ۰ تا ۱۰ ارسال کنید (۰ = نامحدود):")
+        await message.answer("❌ عددی بین ۰ تا ۱۰ ارسال کنید (۰ = نامحدود):")
         return
     db.update_vip_plan(plan_key, user_limit=user_limit)
     await _after_vip_plan_edit(
@@ -3808,7 +3371,7 @@ async def admin_broadcast_start(callback: types.CallbackQuery, state: FSMContext
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
-    await edit_rich(callback.message, 
+    await callback.message.edit_text(
         "📢 پیامی که می‌خواهید برای همه کاربران ارسال شود را بفرستید (متن، عکس، فیلم یا یک پیام فوروارد‌شده هم می‌توانید بفرستید):",
         reply_markup=admin_back_button(),
     )
@@ -3833,7 +3396,7 @@ async def admin_broadcast_send(message: types.Message, state: FSMContext):
     users = [u for u in db.get_all_users() if not u.get("is_blocked")]
     sent, failed = 0, 0
 
-    status_msg = await answer_rich(message, f"📢 در حال ارسال به {len(users)} کاربر...")
+    status_msg = await message.answer(f"📢 در حال ارسال به {len(users)} کاربر...")
 
     # 🚀 بهینه‌سازی سرعت: به‌جای ارسال یکی‌یکی و توقف ثابت بین هر پیام (که برای یک گروه بزرگ کاربر خیلی کند می‌شود)، حالا تا سقف مجاز تلگرام (حدوداً ۲۵-۳۰ پیام در ثانیه) به‌صورت هم‌زمان ارسال می‌شوند (دهها برابر سریع‌تر از حالت قبلی که یکی‌یکی با تاخیر ۵۰ میلی‌ثانیه ارسال می‌شد).
     semaphore = asyncio.Semaphore(25)
@@ -3856,7 +3419,7 @@ async def admin_broadcast_send(message: types.Message, state: FSMContext):
                 counters["failed"] += 1
             if counters["done"] % 200 == 0:
                 try:
-                    await edit_rich(status_msg, 
+                    await status_msg.edit_text(
                         f"📢 در حال ارسال... ({counters['done']}/{len(users)}) ✅ {counters['sent']} | ❌ {counters['failed']}"
                     )
                 except Exception:
@@ -3865,7 +3428,7 @@ async def admin_broadcast_send(message: types.Message, state: FSMContext):
     await asyncio.gather(*(_send_one(u) for u in users))
     sent, failed = counters["sent"], counters["failed"]
 
-    await edit_rich(status_msg, f"✅ ارسال شد به {sent} نفر. ناموفق: {failed} نفر.")
+    await status_msg.edit_text(f"✅ ارسال شد به {sent} نفر. ناموفق: {failed} نفر.")
     await state.clear()
 
 
@@ -3873,19 +3436,31 @@ async def admin_broadcast_send(message: types.Message, state: FSMContext):
 # 📚 مدیریت راهنما و اموزش‌ها — افزودن/ویرایش/حذف/تغییر ترتیب (متن/عکس/فیلم)
 # ---------------------------------------------------------------------------
 def _guide_detail_text_and_entities(guide: dict):
-    """عنوان و محتوای راهنما را دقیقاً با Entityهای ذخیره‌شده Telegram نمایش می‌دهد.
-
-    هیچ prefix، mapping قدیمی یا بازسازی مصنوعی به متن اضافه نمی‌شود؛ بنابراین
-    offset تمام Premium Emojiها همان offset واقعی متن اصلی باقی می‌ماند.
-    """
     title = str(guide.get("title") or "")
     body = str(guide.get("body_text") or "")
-    text = title + (f"\n\n{body}" if body else "")
-    entities = list(message_entities_from_dicts(guide.get("title_entities") or []))
+    prefix = f"📚 {title}"
+    text = prefix + (f"\n\n{body}" if body else "")
+    entities = []
+
+    try:
+        emoji_id = db.get_button_custom_emoji_id("text:" + title)
+        if emoji_id:
+            import unicodedata
+            span = 0
+            j = 0
+            while j < len(title):
+                ch = title[j]; cp = ord(ch)
+                if j == 0 or cp in (0xFE0E, 0xFE0F, 0x200D, 0x20E3) or unicodedata.category(ch) in {"So", "Sk", "Sc"}:
+                    span += len(ch.encode("utf-16-le")) // 2; j += 1; continue
+                break
+            if span:
+                entities.append(types.MessageEntity(type="custom_emoji", offset=3, length=span, custom_emoji_id=str(emoji_id)))
+    except Exception:
+        logger.exception("بازسازی Premium Emoji عنوان راهنما ناموفق بود")
 
     if body:
-        shift = telegram_utf16_length(title + "\n\n")
-        for entity in message_entities_from_dicts(guide.get("body_entities") or []):
+        shift = telegram_utf16_length(prefix + "\n\n")
+        for entity in message_entities_from_dicts(db.get_guide_body_entities(guide)):
             try:
                 entities.append(entity.model_copy(update={"offset": int(entity.offset) + shift}))
             except Exception:
@@ -3896,31 +3471,21 @@ def _guide_detail_text_and_entities(guide: dict):
 async def _send_guide_detail(target: types.Message, guide_id: int):
     guide = db.get_guide(guide_id)
     if guide is None:
-        await answer_rich(target, "❌ این راهنما دیگر موجود نیست.")
+        await target.answer("❌ این راهنما دیگر موجود نیست.")
         return
     guides = db.get_guides()
     idx = next((i for i, g in enumerate(guides) if g["id"] == guide_id), 0)
     caption, entities = _guide_detail_text_and_entities(guide)
     kb = admin_guide_detail_keyboard(guide_id, idx, len(guides))
     try:
-        entities = _sanitize_entities_for_text(caption, entities) if entities else []
         if guide["content_type"] == "photo" and guide.get("file_id"):
             await target.answer_photo(guide["file_id"], caption=caption, caption_entities=entities or None, reply_markup=kb)
         elif guide["content_type"] == "video" and guide.get("file_id"):
             await target.answer_video(guide["file_id"], caption=caption, caption_entities=entities or None, reply_markup=kb)
         else:
-            await target.answer(caption, entities=entities or None, reply_markup=kb)
+            await target.answer(caption, entities=entities or None, parse_mode=None, reply_markup=kb)
     except Exception:
-        # حتی اگر یک entity قدیمی/نامعتبر باشد، صفحه ویرایش راهنما باید باز شود.
-        try:
-            if guide["content_type"] == "photo" and guide.get("file_id"):
-                await target.answer_photo(guide["file_id"], caption=caption, reply_markup=kb)
-            elif guide["content_type"] == "video" and guide.get("file_id"):
-                await target.answer_video(guide["file_id"], caption=caption, reply_markup=kb)
-            else:
-                await target.answer(caption, reply_markup=kb)
-        except Exception:
-            logger.exception("خطا در نمایش راهنمای ادمین guide_id=%s حتی بدون entity", guide_id)
+        await target.answer(caption, entities=entities or None, parse_mode=None, reply_markup=kb)
 
 @router.callback_query(F.data == "admin_guides")
 async def admin_guides_list(callback: types.CallbackQuery, state: FSMContext):
@@ -3934,9 +3499,9 @@ async def admin_guides_list(callback: types.CallbackQuery, state: FSMContext):
         "از اینجا می‌تونید راهنما/آموزش جدید اضافه کنید یا موردهای موجود را ویرایش کنید:"
     )
     try:
-        await edit_rich(callback.message, text, reply_markup=admin_guides_menu(guides))
+        await callback.message.edit_text(text, reply_markup=admin_guides_menu(guides))
     except Exception:
-        await answer_rich(callback.message, text, reply_markup=admin_guides_menu(guides))
+        await callback.message.answer(text, reply_markup=admin_guides_menu(guides))
     await callback.answer()
 
 
@@ -3946,7 +3511,7 @@ async def admin_guide_new_start(callback: types.CallbackQuery, state: FSMContext
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     await state.set_state(AdminStates.waiting_guide_title)
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         "📚 عنوان راهنما/آموزش جدید را بفرستید:",
         reply_markup=admin_guide_cancel_keyboard(),
     )
@@ -3959,14 +3524,14 @@ async def admin_guide_new_title(message: types.Message, state: FSMContext):
         return
     title = (message.text or "").strip()
     if not title:
-        await answer_rich(message, "❌ عنوان نمی‌تواند خالی باشد. دوباره بفرستید:")
+        await message.answer("❌ عنوان نمی‌تواند خالی باشد. دوباره بفرستید:")
         return
     # Premium/Custom Emoji انتخاب‌شده برای عنوان راهنما را به نام داینامیک متصل می‌کنیم
     # تا همان Emoji در دکمه‌ی راهنما نمایش داده شود و Emoji پیش‌فرضی وجود نداشته باشد.
     _save_dynamic_premium_emoji(title, message)
-    await state.update_data(guide_new_title=title, guide_new_title_entities=serialize_message_entities(getattr(message, "entities", None)))
+    await state.update_data(guide_new_title=title)
     await state.set_state(AdminStates.waiting_guide_content)
-    await answer_rich(message, 
+    await message.answer(
         "📝 حالا محتوای این راهنما را بفرستید (متن، عکس با کپشن، یا فیلم با کپشن):",
         reply_markup=admin_guide_cancel_keyboard(),
     )
@@ -3993,16 +3558,15 @@ async def admin_guide_new_content(message: types.Message, state: FSMContext):
         body_entities = serialize_message_entities(getattr(message, "entities", None))
 
     if not body_text and not file_id:
-        await answer_rich(message, "❌ محتوا نمی‌تواند خالی باشد. دوباره بفرستید:")
+        await message.answer("❌ محتوا نمی‌تواند خالی باشد. دوباره بفرستید:")
         return
 
     guide = db.create_guide(
         title=title, content_type=content_type, body_text=body_text or None,
         file_id=file_id, body_entities=body_entities,
-        title_entities=data.get("guide_new_title_entities") or [],
     )
     await state.clear()
-    await answer_rich(message, f"✅ راهنمای «{title}» اضافه شد.")
+    await message.answer(f"✅ راهنمای «{title}» اضافه شد.")
     await _send_guide_detail(message, guide["id"])
 
 
@@ -4041,7 +3605,7 @@ async def admin_guide_edit_name_start(callback: types.CallbackQuery, state: FSMC
         return
     await state.set_state(AdminStates.waiting_guide_edit_title)
     await state.update_data(guide_edit_id=guide_id)
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"✏️ عنوان جدید برای «{guide['title']}» را بفرستید:",
         reply_markup=admin_guide_cancel_keyboard(),
     )
@@ -4059,16 +3623,16 @@ async def admin_guide_edit_name_save(message: types.Message, state: FSMContext):
         return
     title = (message.text or "").strip()
     if not title:
-        await answer_rich(message, "❌ عنوان نمی‌تواند خالی باشد. دوباره بفرستید:")
+        await message.answer("❌ عنوان نمی‌تواند خالی باشد. دوباره بفرستید:")
         return
     old_guide = db.get_guide(guide_id)
     old_title = (old_guide or {}).get("title")
     if old_title and old_title != title:
         db.set_button_custom_emoji_id("text:" + str(old_title), None)
     _save_dynamic_premium_emoji(title, message)
-    db.update_guide(guide_id, title=title, title_entities=serialize_message_entities(getattr(message, "entities", None)))
+    db.update_guide(guide_id, title=title)
     await state.clear()
-    await answer_rich(message, "✅ عنوان به‌روزرسانی شد.")
+    await message.answer("✅ عنوان به‌روزرسانی شد.")
     await _send_guide_detail(message, guide_id)
 
 
@@ -4084,7 +3648,7 @@ async def admin_guide_edit_content_start(callback: types.CallbackQuery, state: F
         return
     await state.set_state(AdminStates.waiting_guide_edit_content)
     await state.update_data(guide_edit_id=guide_id)
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"📝 محتوای جدید برای «{guide['title']}» را بفرستید (متن، عکس با کپشن، یا فیلم با کپشن):",
         reply_markup=admin_guide_cancel_keyboard(),
     )
@@ -4112,7 +3676,7 @@ async def admin_guide_edit_content_save(message: types.Message, state: FSMContex
         body_entities = serialize_message_entities(getattr(message, "entities", None))
 
     if not body_text and not file_id:
-        await answer_rich(message, "❌ محتوا نمی‌تواند خالی باشد. دوباره بفرستید:")
+        await message.answer("❌ محتوا نمی‌تواند خالی باشد. دوباره بفرستید:")
         return
 
     db.update_guide(
@@ -4120,7 +3684,7 @@ async def admin_guide_edit_content_save(message: types.Message, state: FSMContex
         body_entities=body_entities,
     )
     await state.clear()
-    await answer_rich(message, "✅ محتوا به‌روزرسانی شد.")
+    await message.answer("✅ محتوا به‌روزرسانی شد.")
     await _send_guide_detail(message, guide_id)
 
 
@@ -4134,7 +3698,7 @@ async def admin_guide_delete_confirm(callback: types.CallbackQuery):
     if guide is None:
         await callback.answer("❌ این راهنما دیگر موجود نیست.", show_alert=True)
         return
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"❗️ آیا از حذف «{guide['title']}» مطمئن هستید؟",
         reply_markup=admin_guide_delete_confirm_keyboard(guide_id),
     )
@@ -4151,7 +3715,7 @@ async def admin_guide_delete_do(callback: types.CallbackQuery):
     title = guide["title"] if guide else ""
     db.delete_guide(guide_id)
     guides = db.get_guides()
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"✅ راهنمای «{title}» حذف شد.\n\n📚 مدیریت راهنما و اموزش‌ها\n\nتعداد: {len(guides)}",
         reply_markup=admin_guides_menu(guides),
     )
@@ -4195,7 +3759,7 @@ async def _send_sticker_section_detail(target: types.Message, section_key: str):
     except Exception:
         logger.exception("خطا در پیش‌نمایش استیکر بخش '%s'", section_key)
 
-    await answer_rich(target, text, reply_markup=kb)
+    await target.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "admin_stickers")
@@ -4220,9 +3784,9 @@ async def admin_stickers_list(callback: types.CallbackQuery, state: FSMContext):
         "یکی از بخش‌ها رو انتخاب کن:"
     )
     try:
-        await edit_rich(callback.message, text, reply_markup=admin_stickers_menu(sections))
+        await callback.message.edit_text(text, reply_markup=admin_stickers_menu(sections))
     except Exception:
-        await answer_rich(callback.message, text, reply_markup=admin_stickers_menu(sections))
+        await callback.message.answer(text, reply_markup=admin_stickers_menu(sections))
     await callback.answer()
 
 
@@ -4246,7 +3810,7 @@ async def admin_stickers_list_msg(message: types.Message, state: FSMContext):
         "✅ = سفارشی‌شده، ➖ = پیش‌فرض پروژه، 🛑 = غیرفعال\n\n"
         "یکی از بخش‌ها رو انتخاب کن:"
     )
-    await answer_rich(message, text, reply_markup=admin_stickers_menu(sections))
+    await message.answer(text, reply_markup=admin_stickers_menu(sections))
 
 
 @router.callback_query(F.data.startswith("stickeropen_"))
@@ -4275,7 +3839,7 @@ async def admin_sticker_set_start(callback: types.CallbackQuery, state: FSMConte
     await state.set_state(AdminStates.waiting_sticker_upload)
     await state.update_data(sticker_section_key=section_key)
     label = STICKER_SECTION_LABELS.get(section_key, section_key)
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"📤 استیکر/فایل موردنظرت رو برای «{label}» بفرست.\n\n"
         "فقط یک استیکر متحرک (ویدیویی) معتبر تلگرام قابل قبوله؛ هر ویدیوی معمولی رو تلگرام به‌عنوان استیکر قبول نمی‌کنه.",
         reply_markup=admin_sticker_cancel_keyboard(section_key),
@@ -4304,14 +3868,14 @@ async def admin_sticker_upload_receive(message: types.Message, state: FSMContext
         file_id = message.animation.file_id
 
     if not file_id:
-        await answer_rich(message, "❌ فقط استیکر یا فایل/ویدیوی قابل قبوله. دوباره بفرست یا انصراف بده:")
+        await message.answer("❌ فقط استیکر یا فایل/ویدیوی قابل قبوله. دوباره بفرست یا انصراف بده:")
         return
 
     db.set_section_sticker(section_key, file_id)
     invalidate_section_sticker_cache(section_key)
     await state.clear()
     label = STICKER_SECTION_LABELS.get(section_key, section_key)
-    await answer_rich(message, f"✅ استیکر «{label}» ذخیره شد.")
+    await message.answer(f"✅ استیکر «{label}» ذخیره شد.")
     await _send_sticker_section_detail(message, section_key)
 
 
@@ -4380,7 +3944,7 @@ async def admin_backup(callback: types.CallbackQuery):
             caption = "💾 بکاپ دیتابیس"
         await callback.message.answer_document(backup_file, caption=caption)
     except Exception:
-        await answer_rich(callback.message, "❌ خطا در ساخت بکاپ.")
+        await callback.message.answer("❌ خطا در ساخت بکاپ.")
     await callback.answer()
 
 
@@ -4406,9 +3970,9 @@ async def admin_botinfo_open(callback: types.CallbackQuery, state: FSMContext):
         return
     await state.clear()
     try:
-        await edit_rich(callback.message, _botinfo_status_text(), reply_markup=admin_botinfo_menu())
+        await callback.message.edit_text(_botinfo_status_text(), reply_markup=admin_botinfo_menu())
     except TelegramBadRequest:
-        await answer_rich(callback.message, _botinfo_status_text(), reply_markup=admin_botinfo_menu())
+        await callback.message.answer(_botinfo_status_text(), reply_markup=admin_botinfo_menu())
     await callback.answer()
 
 
@@ -4417,221 +3981,7 @@ async def admin_botinfo_open_msg(message: types.Message, state: FSMContext):
     if not _is_admin(message.from_user.id):
         return
     await state.clear()
-    await answer_rich(message, _botinfo_status_text(), reply_markup=admin_botinfo_menu())
-
-
-def _admin_renewal_settings(category_id, plan_key=None):
-    try: cid = int(category_id)
-    except Exception: cid = 0
-    defaults = {"mode":"day","price_day":0,"price_gb":5500,"min_day":1,"max_day":0,"min_gb":1,"max_gb":0,"day_options":"30,60,90","gb_options":"10,20,50"}
-    if cid <= 0: return defaults
-    for field in defaults:
-        raw=db.get_setting(f"renewal_category_{cid}_{field}")
-        if raw not in (None, ""):
-            try: defaults[field]=raw if field in ("mode","day_options","gb_options") else int(float(raw))
-            except (TypeError,ValueError): pass
-    try:
-        legacy=bot_info.get_renewal_settings(cid)
-        if isinstance(legacy,dict):
-            for field in defaults:
-                if db.get_setting(f"renewal_category_{cid}_{field}") in (None,"") and field in legacy: defaults[field]=legacy[field]
-    except Exception: pass
-    if plan_key:
-        try: defaults=bot_info.get_renewal_plan_settings(plan_key,cid)
-        except Exception: pass
-    return defaults
-
-
-def _renewal_scope_parts(target: str):
-    if target.startswith("cat_"):
-        try: return "cat",int(target[4:]),None
-        except Exception: return None,None,None
-    if target.startswith("plan_"):
-        plan_key=target[5:]; plan=db.get_vip_plan(plan_key)
-        if plan and plan.get("category_id"): return "plan",int(plan["category_id"]),plan_key
-    return None,None,None
-
-
-@router.callback_query(F.data == "admin_renewal_settings")
-async def admin_renewal_settings_open(callback: types.CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
-        return
-    await state.clear()
-    await edit_rich(
-        callback.message,
-        "🔁 تنظیمات تمدید سرویس\n\nبرای هر دسته‌بندی می‌توانی حالت تمدید، قیمت و حداقل/حداکثر روز و گیگ را جداگانه تنظیم کنی.",
-        reply_markup=admin_renewal_categories_menu(),
-    )
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("renewsetcat_"))
-async def admin_renewal_category(callback: types.CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
-        return
-    try:
-        category_id = int(callback.data.replace("renewsetcat_", ""))
-    except Exception:
-        await callback.answer("❌ دسته نامعتبر است.", show_alert=True)
-        return
-    cat = db.get_vip_category(category_id)
-    if not cat:
-        await callback.answer("❌ دسته پیدا نشد.", show_alert=True)
-        return
-    await state.clear()
-    await edit_rich(
-        callback.message,
-        f"تنظیمات تمدید\n\nدسته: {cat['name']}\n\nتغییرات را برای همه پلن‌های این دسته اعمال می‌کنی یا فقط یک پلن؟",
-        reply_markup=admin_renewal_scope_menu(category_id),
-    )
-    await callback.answer()
-
-@router.callback_query(F.data.regexp(r"^renewsetscope_\d+$"))
-async def admin_renewal_scope_back(callback: types.CallbackQuery, state: FSMContext):
-    if callback.data.startswith("renewsetscope_all_") or callback.data.startswith("renewsetscope_plan_"):
-        return
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
-    try: category_id=int(callback.data.replace("renewsetscope_", ""))
-    except Exception: await callback.answer("دسته نامعتبر است.", show_alert=True); return
-    await state.clear(); cat=db.get_vip_category(category_id)
-    await edit_rich(callback.message,f"تنظیمات تمدید\n\nدسته: {(cat or {}).get('name',category_id)}\n\nتغییرات را برای همه پلن‌ها اعمال می‌کنی یا فقط یک پلن؟",reply_markup=admin_renewal_scope_menu(category_id)); await callback.answer()
-
-@router.callback_query(F.data.startswith("renewsetscope_all_"))
-async def admin_renewal_scope_all(callback: types.CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
-    try: category_id=int(callback.data.replace("renewsetscope_all_", ""))
-    except Exception: await callback.answer("دسته نامعتبر است.", show_alert=True); return
-    cat=db.get_vip_category(category_id)
-    await state.clear()
-    await edit_rich(callback.message, f"تنظیمات تمدید\n\nدسته: {(cat or {}).get('name',category_id)}\nمحدوده: همه پلن‌های این دسته", reply_markup=admin_renewal_category_menu(category_id))
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("renewsetscope_plan_"))
-async def admin_renewal_scope_plan(callback: types.CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
-    raw=callback.data.replace("renewsetscope_plan_", "", 1)
-    try: category_id_str,plan_key=raw.split("_",1); category_id=int(category_id_str)
-    except Exception: await callback.answer("پلن نامعتبر است.", show_alert=True); return
-    plan=db.get_vip_plan(plan_key)
-    if not plan or int(plan.get("category_id") or 0)!=category_id: await callback.answer("پلن پیدا نشد.", show_alert=True); return
-    await state.clear()
-    await edit_rich(callback.message, f"تنظیمات تمدید\n\nدسته: {(db.get_vip_category(category_id) or {}).get('name',category_id)}\nپلن: {plan['name']}\nمحدوده: فقط این پلن", reply_markup=admin_renewal_plan_menu(category_id,plan_key))
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("renewsetmode_"))
-async def admin_renewal_mode(callback: types.CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id): await callback.answer("⛔ دسترسی ندارید.", show_alert=True); return
-    target=callback.data.replace("renewsetmode_", "", 1); scope,category_id,plan_key=_renewal_scope_parts(target)
-    if not scope: await callback.answer("دسته/پلن نامعتبر است.", show_alert=True); return
-    await edit_rich(callback.message,"نوع تمدید را انتخاب کن:",reply_markup=admin_renewal_mode_menu(category_id,plan_key=plan_key)); await callback.answer()
-
-@router.callback_query(F.data.startswith("renewsetmodeval_"))
-async def admin_renewal_mode_save(callback: types.CallbackQuery, state: FSMContext):
-    raw=callback.data.replace("renewsetmodeval_", "", 1)
-    try: mode,target=raw.split("_",1)
-    except ValueError: await callback.answer("❌ مقدار نامعتبر.",show_alert=True); return
-    scope,category_id,plan_key=_renewal_scope_parts(target)
-    if not scope or mode not in ("day","gb","both"): await callback.answer("❌ مقدار نامعتبر.",show_alert=True); return
-    key=f"renewal_category_{category_id}_mode" if scope=="cat" else f"renewal_plan_{plan_key}_mode"; db.set_setting(key,mode)
-    try:
-        if scope=="cat": bot_info.set_renewal_setting(category_id,"mode",mode); bot_info.clear_renewal_plan_overrides_for_category(category_id,"mode")
-        else: bot_info.set_renewal_plan_setting(plan_key,"mode",mode)
-    except Exception: pass
-    await state.clear(); kb=admin_renewal_category_menu(category_id) if scope=="cat" else admin_renewal_plan_menu(category_id,plan_key)
-    await edit_rich(callback.message,"تنظیمات تمدید به‌روز شد.",reply_markup=kb); await callback.answer()
-
-@router.callback_query(F.data.startswith("renewset_options_"))
-async def admin_renewal_options_start(callback: types.CallbackQuery, state: FSMContext):
-    raw=callback.data.replace("renewset_options_", "", 1)
-    try: unit,target=raw.split("_",1)
-    except ValueError: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
-    scope,category_id,plan_key=_renewal_scope_parts(target)
-    if unit not in ("day","gb") or not scope: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
-    st=_admin_renewal_settings(category_id,plan_key); current=st.get(f"{unit}_options") or ("30,60,90" if unit=="day" else "10,20,50")
-    key=f"renewal_category_{category_id}_{unit}_options" if scope=="cat" else f"renewal_plan_{plan_key}_{unit}_options"
-    await state.update_data(botinfo_key=key,renewal_category_id=category_id,renewal_plan_key=plan_key); await state.set_state(AdminStates.waiting_botinfo_value)
-    label="روز" if unit=="day" else "گیگ"; await answer_rich(callback.message,f"دکمه‌های {label} را با کاما جدا کن.\nمثال: 10,20,50\nمقدار فعلی: {current}",reply_markup=admin_back_button()); await callback.answer()
-
-@router.callback_query(F.data.startswith("renewset_"))
-async def admin_renewal_numeric_start(callback: types.CallbackQuery, state: FSMContext):
-    raw=callback.data.replace("renewset_", "", 1); parts=raw.split("_")
-    if len(parts)<4: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
-    field,unit=parts[0],parts[1]; target="_".join(parts[2:]); scope,category_id,plan_key=_renewal_scope_parts(target)
-    if field not in ("price","min","max") or unit not in ("day","gb") or not scope: await callback.answer("❌ گزینه نامعتبر.",show_alert=True); return
-    st=_admin_renewal_settings(category_id,plan_key); current=st[f"{field}_{unit}"]
-    key=f"renewal_category_{category_id}_{field}_{unit}" if scope=="cat" else f"renewal_plan_{plan_key}_{field}_{unit}"
-    await state.update_data(botinfo_key=key,renewal_category_id=category_id,renewal_plan_key=plan_key); await state.set_state(AdminStates.waiting_botinfo_value)
-    label={"price":"قیمت","min":"حداقل","max":"حداکثر"}[field]; suffix="تومان" if field=="price" else ("روز" if unit=="day" else "گیگ"); shown="نامحدود" if field=="max" and int(current or 0)==0 else current
-    await answer_rich(callback.message,f"{label} {suffix} را وارد کن.\nمقدار فعلی: {shown}",reply_markup=admin_back_button()); await callback.answer()
-
-@router.message(AdminStates.waiting_botinfo_value)
-async def admin_botinfo_edit_save(message: types.Message, state: FSMContext):
-    if not _is_admin(message.from_user.id): return
-    data=await state.get_data(); key=data.get("botinfo_key"); labels=bot_info.labels(); value=(message.text or "").strip()
-    trans=str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")
-    if key and key.startswith("renewal_category_"):
-        try:
-            parts=key.split("_")
-            if len(parts)==5 and parts[3] in ("day","gb") and parts[4]=="options":
-                category_id=int(parts[2]); unit=parts[3]; nums=[]
-                for token in value.replace("،",",").split(","):
-                    token=token.strip()
-                    if token: nums.append(int(token.translate(trans).replace("٬", "")))
-                nums=list(dict.fromkeys(nums)); st=_admin_renewal_settings(category_id); minimum=int(st.get(f"min_{unit}") or 1); maximum=int(st.get(f"max_{unit}") or 0)
-                if not nums or any(n<=0 or n<minimum or (maximum and n>maximum) for n in nums): raise ValueError
-                canonical=",".join(str(n) for n in nums); db.set_setting(f"renewal_category_{category_id}_{unit}_options",canonical); bot_info.set_renewal_setting(category_id,f"{unit}_options",canonical); bot_info.clear_renewal_plan_overrides_for_category(category_id,f"{unit}_options"); await state.clear(); await answer_rich(message,"دکمه‌های انتخاب تمدید به‌روز شد.",reply_markup=admin_renewal_category_menu(category_id)); return
-            if len(parts)!=5: raise ValueError
-            category_id=int(parts[2]); field=parts[3]; unit=parts[4]; number=int(value.translate(trans).replace(",","").replace("٬", "").strip())
-            if field not in ("price","min","max") or unit not in ("day","gb") or number<0 or (field=="min" and number<1): raise ValueError
-            if field=="max" and number and number<int(_admin_renewal_settings(category_id).get(f"min_{unit}") or 1): raise ValueError
-            db.set_setting(f"renewal_category_{category_id}_{field}_{unit}",str(number)); bot_info.set_renewal_setting(category_id,f"{field}_{unit}",number); bot_info.clear_renewal_plan_overrides_for_category(category_id,f"{field}_{unit}"); await state.clear(); await answer_rich(message,"تنظیمات تمدید به‌روز شد.",reply_markup=admin_renewal_category_menu(category_id)); return
-        except Exception:
-            await answer_rich(message,"مقدار نامعتبر است؛ فقط عدد صحیح وارد کنید. برای حداکثر، ۰ یعنی نامحدود."); return
-    if key and key.startswith("renewal_plan_"):
-        try:
-            raw=key.replace("renewal_plan_", "", 1)
-            if raw.endswith("_day_options") or raw.endswith("_gb_options"):
-                unit="day" if raw.endswith("_day_options") else "gb"; suffix=f"_{unit}_options"; plan_key=raw[:-len(suffix)]; plan=db.get_vip_plan(plan_key)
-                if not plan: raise ValueError
-                nums=[int(x.strip().translate(trans).replace("٬", "")) for x in value.replace("،",",").split(",") if x.strip()]; nums=list(dict.fromkeys(nums)); st=_admin_renewal_settings(plan["category_id"],plan_key); minimum=int(st.get(f"min_{unit}") or 1); maximum=int(st.get(f"max_{unit}") or 0)
-                if not nums or any(n<=0 or n<minimum or (maximum and n>maximum) for n in nums): raise ValueError
-                canonical=",".join(str(n) for n in nums); db.set_setting(f"renewal_plan_{plan_key}_{unit}_options",canonical); bot_info.set_renewal_plan_setting(plan_key,f"{unit}_options",canonical); await state.clear(); await answer_rich(message,"دکمه‌های انتخاب تمدید به‌روز شد.",reply_markup=admin_renewal_plan_menu(int(plan["category_id"]),plan_key)); return
-            import re as _re
-            m=_re.fullmatch(r"(.+)_(price|min|max)_(day|gb)",raw)
-            if not m: raise ValueError
-            plan_key,field,unit=m.groups(); plan=db.get_vip_plan(plan_key)
-            if not plan: raise ValueError
-            number=int(value.translate(trans).replace(",","").replace("٬", "").strip())
-            if number<0 or (field=="min" and number<1): raise ValueError
-            st=_admin_renewal_settings(plan["category_id"],plan_key)
-            if field=="max" and number and number<int(st.get(f"min_{unit}") or 1): raise ValueError
-            db.set_setting(f"renewal_plan_{plan_key}_{field}_{unit}",str(number)); bot_info.set_renewal_plan_setting(plan_key,f"{field}_{unit}",number); await state.clear(); await answer_rich(message,"تنظیمات تمدید به‌روز شد.",reply_markup=admin_renewal_plan_menu(int(plan["category_id"]),plan_key)); return
-        except Exception:
-            await answer_rich(message,"مقدار نامعتبر است؛ فقط عدد صحیح وارد کنید. برای حداکثر، ۰ یعنی نامحدود."); return
-    if not key or key not in labels:
-        await state.clear(); await answer_rich(message,"❌ خطای داخلی. دوباره تلاش کنید."); return
-    if key == "config_name_prefix":
-        cleaned=re.sub(r"[^A-Za-z0-9_]+", "", value)
-        if not cleaned:
-            await answer_rich(message,"❌ پیشوند باید فقط از حروف/عدد انگلیسی و زیرخط (_) تشکیل شده باشد؛ دوباره وارد کن:"); return
-        value=cleaned
-    # متن را تا سقف واقعی Telegram Bot API می‌پذیریم. مسیر /start هنگام ارسال
-    # متن ثابت پایین را هم حساب می‌کند و اگر مجموع از سقف عبور کند، امن کوتاه می‌شود.
-    from utils import telegram_utf16_length
-    if telegram_utf16_length(value) > TELEGRAM_TEXT_LIMIT:
-        await answer_rich(message, 
-            f"❌ متن از سقف تلگرام بیشتر است. سقف واقعی: {TELEGRAM_TEXT_LIMIT} واحد UTF-16. لطفاً متن کوتاه‌تری بفرست:"
-        )
-        return
-    if key == "welcome_text":
-        # Custom/Premium Emoji به‌صورت MessageEntity می‌آید؛ ذخیره‌ی صرفِ message.text
-        # شناسه‌ی emoji را از بین می‌برد.
-        bot_info.set_welcome_text_with_entities(value, serialize_message_entities(message.entities))
-    else:
-        bot_info.set(key, value)
-    await state.clear()
-    await answer_rich(message, f"✅ «{labels[key]}» به‌روز شد.", reply_markup=admin_botinfo_menu())
+    await message.answer(_botinfo_status_text(), reply_markup=admin_botinfo_menu())
 
 
 @router.callback_query(F.data.startswith("botinfoedit_"))
@@ -4647,11 +3997,49 @@ async def admin_botinfo_edit_start(callback: types.CallbackQuery, state: FSMCont
     await state.update_data(botinfo_key=key)
     await state.set_state(AdminStates.waiting_botinfo_value)
     current = bot_info.get(key) or "—"
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         f"✏️ مقدار جدید برای «{labels[key]}» را بفرستید.\nمقدار فعلی: {current}",
         reply_markup=admin_botinfo_field_keyboard(key),
     )
     await callback.answer()
+
+
+@router.message(AdminStates.waiting_botinfo_value)
+async def admin_botinfo_edit_save(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    key = data.get("botinfo_key")
+    labels = bot_info.labels()
+    if not key or key not in labels:
+        await state.clear()
+        await message.answer("❌ خطای داخلی. دوباره تلاش کنید.")
+        return
+    value = (message.text or "").strip()
+    if key == "config_name_prefix":
+        cleaned = re.sub(r"[^A-Za-z0-9_]+", "", value)
+        if not cleaned:
+            await message.answer(
+                "❌ پیشوند باید فقط از حروف/عدد انگلیسی و زیرخط (_) تشکیل شده باشد؛ دوباره وارد کن:"
+            )
+            return
+        value = cleaned
+    # متن را تا سقف واقعی Telegram Bot API می‌پذیریم. مسیر /start هنگام ارسال
+    # متن ثابت پایین را هم حساب می‌کند و اگر مجموع از سقف عبور کند، امن کوتاه می‌شود.
+    from utils import telegram_utf16_length
+    if telegram_utf16_length(value) > TELEGRAM_TEXT_LIMIT:
+        await message.answer(
+            f"❌ متن از سقف تلگرام بیشتر است. سقف واقعی: {TELEGRAM_TEXT_LIMIT} واحد UTF-16. لطفاً متن کوتاه‌تری بفرست:"
+        )
+        return
+    if key == "welcome_text":
+        # Custom/Premium Emoji به‌صورت MessageEntity می‌آید؛ ذخیره‌ی صرفِ message.text
+        # شناسه‌ی emoji را از بین می‌برد.
+        bot_info.set_welcome_text_with_entities(value, serialize_message_entities(message.entities))
+    else:
+        bot_info.set(key, value)
+    await state.clear()
+    await message.answer(f"✅ «{labels[key]}» به‌روز شد.", reply_markup=admin_botinfo_menu())
 
 
 @router.callback_query(F.data == "botinfochannels")
@@ -4663,9 +4051,9 @@ async def admin_botinfo_channels_open(callback: types.CallbackQuery, state: FSMC
     channels = bot_info.get_required_channels()
     text = "📢 کانال‌های عضویت اجباری\n\nروی هرکدام بزنید تا حذف شود." if channels else "📢 هیچ کانال اجباریثبت نشده."
     try:
-        await edit_rich(callback.message, text, reply_markup=admin_botinfo_channels_menu(channels))
+        await callback.message.edit_text(text, reply_markup=admin_botinfo_channels_menu(channels))
     except TelegramBadRequest:
-        await answer_rich(callback.message, text, reply_markup=admin_botinfo_channels_menu(channels))
+        await callback.message.answer(text, reply_markup=admin_botinfo_channels_menu(channels))
     await callback.answer()
 
 
@@ -4675,7 +4063,7 @@ async def admin_botinfo_channel_add_start(callback: types.CallbackQuery, state: 
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     await state.set_state(AdminStates.waiting_botinfo_channel_add)
-    await answer_rich(callback.message, 
+    await callback.message.answer(
         "➕ افزودن کانال اجباری\n\nفرمت زیر را ارسال کنید (با | جدا شده):\nآیدی/یوزرنیم کانال | نام نمایشی | لینک دعوت\nمثال: -1001234567890 | کانال ما | https://t.me/mychannel",
         reply_markup=admin_botinfo_field_keyboard(""),
     )
@@ -4692,7 +4080,7 @@ async def admin_botinfo_channel_add_save(message: types.Message, state: FSMConte
     # دکمه‌ی «عضویت» ذخیره می‌شد و بعداً برای هر کاربری که هنوز عضو نشده بود، تلگرام موقع
     # نمایش منوی عضویت اجباری خطای BUTTON_URL_INVALID می‌داد و /start با ارور مواجه می‌شد.
     if len(parts) != 3 or not parts[0] or not parts[2]:
-        await answer_rich(message, "❌ فرمت نادرست یا لینک دعوت خالی است. هر سه بخش (آیدی | نام | لینک دعوت) باید پر باشند. دوباره تلاش کنید یا /cancel بزنید.")
+        await message.answer("❌ فرمت نادرست یا لینک دعوت خالی است. هر سه بخش (آیدی | نام | لینک دعوت) باید پر باشند. دوباره تلاش کنید یا /cancel بزنید.")
         return
     raw_chat_id, name, url = parts
     raw_chat_id = clean_numeric_id(raw_chat_id)
@@ -4702,7 +4090,7 @@ async def admin_botinfo_channel_add_save(message: types.Message, state: FSMConte
     try:
         chat = await message.bot.get_chat(chat_id_input)
     except Exception as e:
-        await answer_rich(message, 
+        await message.answer(
             "❌ ربات نتوانست این کانال را پیدا کند. ممکن است:\n"
             "• فرمت آیدی اشتباه باشد (برای کانال باید با «-100» شروع شود، متل -1001234567890)\n"
             "• ربات هنوز به این کانال اضافه/عضو نشده باشد\n\n"
@@ -4713,19 +4101,19 @@ async def admin_botinfo_channel_add_save(message: types.Message, state: FSMConte
     try:
         bot_member = await message.bot.get_chat_member(chat.id, message.bot.id)
         if bot_member.status not in ("administrator", "creator"):
-            await answer_rich(message, 
+            await message.answer(
                 "⚠️ ربات عضو این کانال هست ولی «ادمین» نیست. برای اینکه ربات بتواند عضویت کاربرها را در این کانال ببیند، باید ربات را در آن کانال «ادمین» کنی ‌(نه فقط عضو)، بعد دوباره همین پیام را بفرست."
             )
             return
     except Exception as e:
-        await answer_rich(message, f"❌ بررسی وضعیت عضویت ربات در این کانال با خطا مواجه شد: {e}\n\nدوباره تلاش کنید یا /cancel بزنید.")
+        await message.answer(f"❌ بررسی وضعیت عضویت ربات در این کانال با خطا مواجه شد: {e}\n\nدوباره تلاش کنید یا /cancel بزنید.")
         return
 
     # 🐛 فیکس: به‌جای متنی که ادمین خودش تایپ کرده، همیشه از chat.id عددی واقعی که تلگرام برمی‌گرداند استفاده می‌کنیم تا همیشه با همان فرمتی که check_membership انتظار دارد ذخیره شود (نه متنی که ادمین تایکرده و ممکن است فرمتش اشتباه باشد).
     bot_info.add_required_channel(chat.id, name, url)
     await state.clear()
     channels = bot_info.get_required_channels()
-    await answer_rich(message, 
+    await message.answer(
         f"✅ کانال اضافه شد و تایید شد که ربات به درستی در آن ادمین است (آیدی واقعی: {chat.id}).",
         reply_markup=admin_botinfo_channels_menu(channels),
     )
@@ -4741,9 +4129,9 @@ async def admin_botinfo_channel_del(callback: types.CallbackQuery):
     channels = bot_info.get_required_channels()
     text = "📢 کانال‌های عضویت اجباری" if channels else "📢 هیچ کانال اجباریثبت نشده."
     try:
-        await edit_rich(callback.message, text, reply_markup=admin_botinfo_channels_menu(channels))
+        await callback.message.edit_text(text, reply_markup=admin_botinfo_channels_menu(channels))
     except TelegramBadRequest:
-        await answer_rich(callback.message, text, reply_markup=admin_botinfo_channels_menu(channels))
+        await callback.message.answer(text, reply_markup=admin_botinfo_channels_menu(channels))
     await callback.answer("✅ حذف شد.")
 
 
@@ -4752,7 +4140,7 @@ async def admin_texts_from_menu(message: types.Message, state: FSMContext):
     if not _is_admin(message.from_user.id):
         return
     await state.clear()
-    await answer_rich(message, 
+    await message.answer(
         "📝 مدیریت جامع متن‌های کاربر و اعلان‌ها\n\nیک بخش را انتخاب کنید:",
         reply_markup=_text_manager_keyboard(),
     )
@@ -4773,7 +4161,7 @@ async def admin_free_test_settings_open_callback(callback: types.CallbackQuery, 
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     await state.set_state(AdminStates.waiting_free_test_settings)
-    await edit_rich(callback.message, _free_test_settings_text())
+    await callback.message.edit_text(_free_test_settings_text())
     await callback.answer()
 
 
@@ -4804,23 +4192,12 @@ def _free_test_settings_text() -> str:
     )
 
 
-@router.message(F.text == "🔁 تنظیمات تمدید")
-async def admin_renewal_settings_open_message(message: types.Message, state: FSMContext):
-    if not _is_admin(message.from_user.id):
-        return
-    await state.clear()
-    await answer_rich(
-        message,
-        "🔁 تنظیمات تمدید سرویس\n\nبرای هر دسته‌بندی می‌توانی حالت تمدید، قیمت و حداقل/حداکثر روز و گیگ را جداگانه تنظیم کنی.",
-        reply_markup=admin_renewal_categories_menu(),
-    )
-
 @router.message(F.text == "🎁 تنظیم تست رایگان")
 async def admin_free_test_settings_open(message: types.Message, state: FSMContext):
     if not _is_admin(message.from_user.id):
         return
     await state.set_state(AdminStates.waiting_free_test_settings)
-    await answer_rich(message, _free_test_settings_text())
+    await message.answer(_free_test_settings_text())
 
 
 @router.message(AdminStates.waiting_free_test_settings)
@@ -4830,18 +4207,18 @@ async def admin_free_test_settings_save(message: types.Message, state: FSMContex
     text = (message.text or "").strip()
     if text == "/cancel":
         await state.clear()
-        await answer_rich(message, "❌ لغو شد.", reply_markup=_admin_reply_kb_for(message.from_user.id))
+        await message.answer("❌ لغو شد.", reply_markup=_admin_reply_kb_for(message.from_user.id))
         return
     parts = [p.strip() for p in text.split("|")]
     if len(parts) != 3:
-        await answer_rich(message, "❌ فرمت نادرست. مثال درست: 500 | 3 | 1500\n\nدوباره تلاش کنید یا /cancel بزنید.")
+        await message.answer("❌ فرمت نادرست. مثال درست: 500 | 3 | 1500\n\nدوباره تلاش کنید یا /cancel بزنید.")
         return
     volume_str, days_str, price_str = parts
     volume_mb = parse_int_in_range(volume_str, FREE_TEST_MIN_VOLUME_MB, FREE_TEST_MAX_VOLUME_MB)
     days = parse_int_in_range(days_str, FREE_TEST_MIN_DAYS, FREE_TEST_MAX_DAYS)
     price = parse_int_in_range(price_str, FREE_TEST_MIN_PRICE, FREE_TEST_MAX_PRICE)
     if volume_mb is None or days is None or price is None:
-        await answer_rich(message, 
+        await message.answer(
             f"❌ مقدار نامعتبر. حجم باید بین {FREE_TEST_MIN_VOLUME_MB} تا {FREE_TEST_MAX_VOLUME_MB} مگابایت، "
             f"روز باید بین {FREE_TEST_MIN_DAYS} تا {FREE_TEST_MAX_DAYS} و "
             f"قیمت باید بین {FREE_TEST_MIN_PRICE} تا {FREE_TEST_MAX_PRICE} تومان باشد.\n\nدوباره تلاش کنید یا /cancel بزنید."
@@ -4851,12 +4228,12 @@ async def admin_free_test_settings_save(message: types.Message, state: FSMContex
         db.set_free_test_override(volume_mb, days, price)
     except Exception as e:
         logger.exception("خطا در ذخیره تنظیمات تست رایگان")
-        await answer_rich(message, f"❌ ذخیره تنظیمات ناموفق بود: {e}")
+        await message.answer(f"❌ ذخیره تنظیمات ناموفق بود: {e}")
         return
     await state.clear()
     plan = db.get_effective_free_test_plan()
     price_label = "رایگان" if price == 0 else f"{price:,} تومان"
-    await answer_rich(message, 
+    await message.answer(
         f"✅ پلن «تست رایگان» به‌روزرسانی شد: {plan['name']} — قیمت: {price_label}",
         reply_markup=_admin_reply_kb_for(message.from_user.id),
     )
@@ -4873,3 +4250,112 @@ async def admin_free_test_settings_save(message: types.Message, state: FSMContex
 
 
 
+# ---------------------------------------------------------------------------
+# 🛡️ اتصال پنل پاسارگارد (پنل VPN دوم، در کنار مرزبان)
+# ---------------------------------------------------------------------------
+def _pasargad_status_text():
+    lines = ["🛡️ پنل پاسارگارد (PasarGuard)\n"]
+    lines.append(f"وضعیت: {'✅ فعال' if PASARGAD_ENABLED else '⚪ غیرفعال (PASARGAD_BASE_URL/PASARGAD_USERNAME/PASARGAD_PASSWORD در env تنظیم نشده)'}")
+    active = vpn_panel.active_panel()
+    lines.append(f"پنل VPN فعال فعلی: {vpn_panel.PANEL_LABELS.get(active, 'هیچکدام')}")
+    return "\n".join(lines)
+
+
+@router.callback_query(F.data == "admin_pasargad")
+async def admin_pasargad_open(callback: types.CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    await state.clear()
+    text = _pasargad_status_text()
+    try:
+        await callback.message.edit_text(text, reply_markup=admin_pasargad_menu(text))
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=admin_pasargad_menu(text))
+    await callback.answer()
+
+
+@router.message(F.text == "🛡️ اتصال پنل پاسارگارد")
+async def admin_pasargad_open_msg(message: types.Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        return
+    await state.clear()
+    text = _pasargad_status_text()
+    await message.answer(text, reply_markup=admin_pasargad_menu(text))
+
+
+@router.callback_query(F.data == "pasargadtest")
+async def admin_pasargad_test(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    await callback.answer("⏳ در حال بررسی...")
+    ok, data, msg = await pasargad.test_connection()
+    icon = "✅" if ok else "❌"
+    await callback.message.answer(f"{icon} {msg}")
+
+
+# ---------------------------------------------------------------------------
+# 🔀 انتخاب پنل VPN فعال (اگر هر دو پنل متصل باشند)
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == "admin_panel_choose")
+async def admin_panel_choose_open(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    available = vpn_panel.available_panels()
+    if not available:
+        await callback.answer(
+            "هیچ پنل VPNی متصل نیست. ابتدا مرزبان یا پاسارگارد را وصل کنید.",
+            show_alert=True,
+        )
+        return
+    active = vpn_panel.active_panel()
+    text = (
+        "🔀 انتخاب پنل VPN فعال\n\n"
+        "ساخت/تمدید/فعال‌سازی خودکار سرویس‌ها از طریق پنلی انجام می‌شود که اینجا به‌عنوان پنل فعال انتخاب شود."
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=admin_panel_choose_menu(available, active))
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=admin_panel_choose_menu(available, active))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("panelchoose_"))
+async def admin_panel_choose_set(callback: types.CallbackQuery):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
+        return
+    name = callback.data.replace("panelchoose_", "", 1)
+    available = vpn_panel.available_panels()
+    if name not in available:
+        await callback.answer("این پنل وصل نیست.", show_alert=True)
+        return
+    vpn_panel.set_active_panel(name)
+    active = vpn_panel.active_panel()
+    text = (
+        f"✅ پنل فعال تغییر کرد: {vpn_panel.PANEL_LABELS.get(active)}\n\n"
+        "ساخت/تمدید/فعال‌سازی خودکار سرویس‌ها از این پس از طریق همین پنل انجام می‌شود."
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=admin_panel_choose_menu(available, active))
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=admin_panel_choose_menu(available, active))
+    await callback.answer("✅ ذخیره شد.")
+
+
+@router.message(F.text == "🔀 انتخاب پنل VPN فعال")
+async def admin_panel_choose_open_msg(message: types.Message):
+    if not _is_admin(message.from_user.id):
+        return
+    available = vpn_panel.available_panels()
+    if not available:
+        await message.answer("هیچ پنل VPNی متصل نیست. ابتدا مرزبان یا پاسارگارد را وصل کنید.")
+        return
+    active = vpn_panel.active_panel()
+    text = (
+        "🔀 انتخاب پنل VPN فعال\n\n"
+        "ساخت/تمدید/فعال‌سازی خودکار سرویس‌ها از طریق پنلی انجام می‌شود که اینجا به‌عنوان پنل فعال انتخاب شود."
+    )
+    await message.answer(text, reply_markup=admin_panel_choose_menu(available, active))
