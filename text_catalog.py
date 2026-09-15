@@ -264,6 +264,15 @@ TEXT_CATEGORIES = OrderedDict({
 })
 
 
+# 🔄 متن‌های جزئیات تمدید سرویس — قابل ویرایش و پشتیبانی از Premium/Custom Emoji
+TEXT_CATEGORIES.setdefault("🔄 تمدید سرویس", []).extend([
+    ("renew_volume_days_detail", "📦 حجم: {previous_volume} + {added_volume} → {new_volume}\n⏳ زمان: {previous_days} + {added_days} → {new_days}"),
+    ("renew_volume_only_detail", "📦 حجم: {previous_volume} + {added_volume} → {new_volume}"),
+    ("renew_days_only_detail", "⏳ زمان: {previous_days} + {added_days} → {new_days}"),
+    ("renew_details_title", "📋 جزئیات تمدید"),
+])
+
+
 # 🛠 متن‌های بخش «بساز سرویس خودت» — قابل ویرایش از همان پنل مدیریت متن
 TEXT_CATEGORIES.setdefault("custom_build", []).extend([
     ("plans_vip_button", "سرور VIP (V2Ray)"),
